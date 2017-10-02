@@ -25,8 +25,8 @@ static void __emit_error(const char *msg) {
 }
 
 /* Helper function that converts a string to an integer, and
-   terminates the program with an error message is the string is not a
-   proper number */   
+   terminates the program with an error message if the string is not a
+   proper number */
 static long int __str_to_int(char *s, const char *error_msg) {
   long int res = 0;
   char c;
@@ -123,9 +123,9 @@ usage: (klee_init_env) [options] [program arguments]\n\
   while (k < argc) {
     if (__streq(argv[k], "--sym-arg") || __streq(argv[k], "-sym-arg")) {
       const char *msg = "--sym-arg expects an integer argument <max-len>";
-      if (++k == argc)        
-	__emit_error(msg);
-		
+      if (++k == argc)
+        __emit_error(msg);
+
       max_len = __str_to_int(argv[k++], msg);
       sym_arg_name[3] = '0' + sym_arg_num++;
       __add_arg(&new_argc, new_argv, 
@@ -137,8 +137,8 @@ usage: (klee_init_env) [options] [program arguments]\n\
         "--sym-args expects three integer arguments <min-argvs> <max-argvs> <max-len>";
 
       if (k+3 >= argc)
-	__emit_error(msg);
-      
+        __emit_error(msg);
+
       k++;
       min_argvs = __str_to_int(argv[k++], msg);
       max_argvs = __str_to_int(argv[k++], msg);
@@ -156,8 +156,8 @@ usage: (klee_init_env) [options] [program arguments]\n\
       const char* msg = "--sym-files expects two integer arguments <no-sym-files> <sym-file-len>";      
 
       if (k+2 >= argc)
-	__emit_error(msg);
-      
+        __emit_error(msg);
+
       k++;
       sym_files = __str_to_int(argv[k++], msg);
       sym_file_len = __str_to_int(argv[k++], msg);
@@ -187,8 +187,8 @@ usage: (klee_init_env) [options] [program arguments]\n\
     else if (__streq(argv[k], "--max-fail") || __streq(argv[k], "-max-fail")) {
       const char *msg = "--max-fail expects an integer argument <max-failures>";
       if (++k == argc)
-	__emit_error(msg);
-		
+        __emit_error(msg);
+
       fd_fail = __str_to_int(argv[k++], msg);
     }
     else {
