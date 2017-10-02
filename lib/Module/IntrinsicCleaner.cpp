@@ -232,6 +232,8 @@ bool IntrinsicCleanerPass::runOnBasicBlock(BasicBlock &b, Module &M) {
         dirty = true;
         break;
       }
+        case Intrinsic::fabs:
+          break;
       default:
         if (LowerIntrinsics)
           IL->LowerIntrinsicCall(ii);
