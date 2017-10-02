@@ -8,6 +8,7 @@ Output/
 /build
 
 cscope.*
+.idea/
 *~
 
 *.log
