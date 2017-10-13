@@ -105,6 +105,16 @@ namespace klee {
         assert(isa<ConstantExpr>(res) &&
                "result of constant vector built is not a constant");
         return cast<ConstantExpr>(res);
+      } else if (const BlockAddress *ba = dyn_cast<BlockAddress>(c)) {
+        auto arg_bb = (BasicBlock*) ba->getOperand(1);
+
+        // TODO: check validity of basic block/label address
+        // check address of function
+        auto arg_f = (Function *) ba->getOperand(0);
+        assert(legalFunctions.find((uint64_t) (unsigned long) (void*) arg_f) != legalFunctions.cend() && "unknown function address in blockaddress");
+
+        auto res = Expr::createPointer((uint64_t) (unsigned long) (void*) arg_bb);
+        return cast<ConstantExpr>(res);
       } else {
         std::string msg("Cannot handle constant ");
         llvm::raw_string_ostream os(msg);

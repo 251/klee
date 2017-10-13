@@ -1526,6 +1526,14 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     }
     break;
   }
+  case Instruction::IndirectBr: {
+    auto bi = cast<IndirectBrInst>(i);
+    auto ex = eval(ki, 0, state).value;
+    auto ce = static_cast<ConstantExpr *>(ex.get());
+    auto bb = (BasicBlock *) ce->getZExtValue(Context::get().getPointerWidth());
+    transferToBasicBlock(bb, bi->getParent(), state);
+    break;
+  }
   case Instruction::Switch: {
     SwitchInst *si = cast<SwitchInst>(i);
     ref<Expr> cond = eval(ki, 0, state).value;
