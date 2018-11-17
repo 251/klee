@@ -10,6 +10,7 @@ install_build_dependencies_klee() {
     python-wheel #for lit
     zlib1g-dev
     python3
+    python3-setuptools
     python3-pip
   )
 
