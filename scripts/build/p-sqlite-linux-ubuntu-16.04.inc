@@ -31,5 +31,10 @@ is_installed_sqlite() {
 }
 
 get_docker_config_id_sqlite() {
+  if [[ "${SANITIZER_SUFFIX}x" != "x" ]]; then
+    setup_build_variables_sqlite
+    echo "sqlite${SQLITE_SUFFIX}"
+  elif
     return 0
+  fi
 }
