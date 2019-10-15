@@ -17,68 +17,65 @@ using namespace klee;
 
 // WallTimer
 
-WallTimer::WallTimer() {
-  start = time::getWallTime();
-}
+WallTimer::WallTimer() : start{time::getWallTime()} {}
 
-time::Span WallTimer::check() {
+time::Span WallTimer::delta() const {
   return {time::getWallTime() - start};
 }
 
 
 // Timer
 
-Timer::Timer(const time::Span &rate, std::function<void()> &&callback) :
-  rate{rate}, nextFireTime{time::getWallTime() + rate}, run{std::move(callback)} {};
+Timer::Timer(const time::Span &interval, std::function<void()> &&callback) :
+  interval{interval}, nextInvocationTime{time::getWallTime() + interval}, run{std::move(callback)} {};
 
-time::Span Timer::getRate() const {
-  return rate;
+time::Span Timer::getInterval() const {
+  return interval;
 };
 
 void Timer::invoke(const time::Point &currentTime) {
-  if (currentTime < nextFireTime) return;
+  if (currentTime < nextInvocationTime) return;
 
   run();
-  nextFireTime = currentTime + rate;
+  nextInvocationTime = currentTime + interval;
 };
 
 void Timer::reset(const time::Point &currentTime) {
-  nextFireTime = currentTime + rate;
+  nextInvocationTime = currentTime + interval;
 };
 
 
 // TimerGroup
 
-TimerGroup::TimerGroup(const time::Span &minInterval) : minInterval{minInterval}, lastCheckedTime{time::getWallTime()} {};
+TimerGroup::TimerGroup(const time::Span &minInterval) :
+  invocationTimer{
+    minInterval,
+    [&]{
+      // invoke timers
+      for (auto &timer : timers)
+        timer->invoke(currentTime);
+    }
+  } {};
 
 void TimerGroup::add(std::unique_ptr<klee::Timer> timer) {
-  const auto &rate = timer->getRate();
-  if (rate < minInterval)
-    klee_warning("Timer rate below minimum timer interval (-timer-interval)");
-  if (rate.toMicroseconds() % minInterval.toMicroseconds())
-    klee_warning("Timer rate not a multiple of timer interval (-timer-interval)");
+  const auto &interval = timer->getInterval();
+  const auto &minInterval = invocationTimer.getInterval();
+  if (interval < minInterval)
+    klee_warning("Timer interval below minimum timer interval (-timer-interval)");
+  if (interval.toMicroseconds() % minInterval.toMicroseconds())
+    klee_warning("Timer interval not a multiple of timer interval (-timer-interval)");
 
   timers.emplace_back(std::move(timer));
 }
 
 void TimerGroup::invoke() {
-  const auto currentTime = time::getWallTime();
-  const auto currentInterval = currentTime - lastCheckedTime;
-
-  // short circuit if below TimerInterval
-  if (currentInterval < minInterval)
-    return;
-
-  // invoke timers
-  for (auto &timer : timers)
-    timer->invoke(currentTime);
-
-  lastCheckedTime = currentTime;
+  currentTime = time::getWallTime();
+  invocationTimer.invoke(currentTime);
 }
 
 void TimerGroup::reset() {
-  const auto currentTime = time::getWallTime();
+  currentTime = time::getWallTime();
+  invocationTimer.reset(currentTime);
   for (auto &timer : timers)
     timer->reset(currentTime);
-  lastCheckedTime = currentTime;
 }
