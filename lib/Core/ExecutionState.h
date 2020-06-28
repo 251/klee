@@ -110,8 +110,8 @@ public:
   /// @brief Set containing which lines in which files are covered by this state
   std::map<const std::string *, std::set<std::uint32_t>> coveredLines;
 
-  /// @brief Pointer to the process tree of the current state
-  PTreeNode *ptreeNode;
+  /// @brief Associated process tree node
+  std::uint32_t ptreeNodeID;
 
   /// @brief Ordered list of symbolics: used to generate test cases.
   //

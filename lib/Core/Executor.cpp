@@ -893,7 +893,7 @@ void Executor::branch(ExecutionState &state,
       ExecutionState *ns = es->branch();
       addedStates.push_back(ns);
       result.push_back(ns);
-      processTree->attach(es->ptreeNode, ns, es);
+      processTree->attach(es->ptreeNodeID, ns, es);
     }
   }
 
@@ -1128,7 +1128,7 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
       }
     }
 
-    processTree->attach(current.ptreeNode, falseState, trueState);
+    processTree->attach(current.ptreeNodeID, falseState, trueState);
 
     if (pathWriter) {
       // Need to update the pathOS.id field of falseState, otherwise the same id
@@ -2823,7 +2823,7 @@ void Executor::updateStates(ExecutionState *current) {
       seedMap.find(es);
     if (it3 != seedMap.end())
       seedMap.erase(it3);
-    processTree->remove(es->ptreeNode);
+    processTree->remove(es->ptreeNodeID);
     delete es;
   }
   removedStates.clear();
@@ -3130,7 +3130,7 @@ void Executor::terminateState(ExecutionState &state) {
     if (it3 != seedMap.end())
       seedMap.erase(it3);
     addedStates.erase(it);
-    processTree->remove(state.ptreeNode);
+    processTree->remove(state.ptreeNodeID);
     delete &state;
   }
 }
@@ -4149,7 +4149,7 @@ int *Executor::getErrnoLocation(const ExecutionState &state) const {
 
 void Executor::dumpPTree() {
   if (!::dumpPTree) return;
-
+/*
   char name[32];
   snprintf(name, sizeof(name),"ptree%08d.dot", (int) stats::instructions);
   auto os = interpreterHandler->openOutputFile(name);
@@ -4158,7 +4158,8 @@ void Executor::dumpPTree() {
   }
 
   ::dumpPTree = 0;
-}
+*/
+ }
 
 void Executor::dumpStates() {
   if (!::dumpStates) return;

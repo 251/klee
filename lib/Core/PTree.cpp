@@ -7,45 +7,67 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "PTree.h"
-
 #include "ExecutionState.h"
-
-#include "klee/Expr/Expr.h"
-#include "klee/Expr/ExprPPrinter.h"
-
-#include <vector>
+#include "PTree.h"
 
 using namespace klee;
 
 PTree::PTree(ExecutionState *initialState) {
-  root = std::make_unique<PTreeNode>(nullptr, initialState);
+  nodes.resize(1024);
+  allocated.resize(1024);
+  nodes[1].state = initialState;
+  initialState->ptreeNodeID = 1;
+  allocated.set(1);
+  allocated.set(0); // first entry is dummy
 }
 
-void PTree::attach(PTreeNode *node, ExecutionState *leftState, ExecutionState *rightState) {
-  assert(node && !node->left && !node->right);
 
-  node->state = nullptr;
-  node->left = std::make_unique<PTreeNode>(node, leftState);
-  node->right = std::make_unique<PTreeNode>(node, rightState);
+std::uint32_t PTree::insert(std::uint32_t parentNodeID, ExecutionState * state) {
+  // resize when full
+  if (allocated.all()) {
+    const auto current_size = allocated.size();
+    nodes.resize(current_size + 1024);
+    allocated.resize(current_size + 1024);
+  }
+
+  // find free slot close to nodeID (simplified: just find next or start from beginning)
+  int idx = allocated.find_next_unset(parentNodeID);
+  if (idx == -1) idx = allocated.find_first_unset_in(2, parentNodeID);
+  assert(idx != -1);
+
+  allocated.set(idx);
+  nodes[idx] = {.left = 0, .right = 0, .parent = parentNodeID, .state = state};
+  state->ptreeNodeID = idx;
+  // llvm::errs() << "new node at: " << idx << " (p:" << parentNodeID << ") for state: " << state->getID() << '\n';
+
+  return idx;
 }
 
-void PTree::remove(PTreeNode *n) {
-  assert(!n->left && !n->right);
+
+void PTree::attach(std::uint32_t nodeID, ExecutionState * leftState, ExecutionState * rightState) {
+  nodes[nodeID].state = nullptr;
+  nodes[nodeID].left  = insert(nodeID, leftState);
+  nodes[nodeID].right = insert(nodeID, rightState);
+}
+
+void PTree::remove(std::uint32_t nodeID) {
   do {
-    PTreeNode *p = n->parent;
-    if (p) {
-      if (n == p->left.get()) {
-        p->left = nullptr;
+    auto parentNodeID = nodes[nodeID].parent;
+    if (parentNodeID) {
+      if (nodeID == nodes[parentNodeID].left) {
+        nodes[parentNodeID].left = 0;
       } else {
-        assert(n == p->right.get());
-        p->right = nullptr;
+        nodes[parentNodeID].right = 0;
       }
     }
-    n = p;
-  } while (n && !n->left && !n->right);
+
+    // llvm::errs() << "remove node at: " << nodeID << " (p:" << parentNodeID << ") for state: " << nodes[nodeID].state << '\n';
+    allocated.reset(nodeID);
+    nodeID = parentNodeID;
+  } while (nodeID && !nodes[nodeID].left && !nodes[nodeID].right);
 }
 
+/*
 void PTree::dump(llvm::raw_ostream &os) {
   ExprPPrinter *pp = ExprPPrinter::create(os);
   pp->setNewline("\\l");
@@ -81,4 +103,4 @@ void PTree::dump(llvm::raw_ostream &os) {
 PTreeNode::PTreeNode(PTreeNode *parent, ExecutionState *state) : parent{parent}, state{state} {
   state->ptreeNode = this;
 }
-
+*/

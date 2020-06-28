@@ -174,15 +174,15 @@ namespace klee {
     Executor &executor;
 
   public:
-    RandomPathSearcher(Executor &_executor);
-    ~RandomPathSearcher();
+    explicit RandomPathSearcher(Executor &executor) : executor{executor} {};
+    ~RandomPathSearcher() override = default;
 
-    ExecutionState &selectState();
+    ExecutionState &selectState() override;
     void update(ExecutionState *current,
                 const std::vector<ExecutionState *> &addedStates,
-                const std::vector<ExecutionState *> &removedStates);
-    bool empty();
-    void printName(llvm::raw_ostream &os) {
+                const std::vector<ExecutionState *> &removedStates) override {};
+    bool empty() override;
+    void printName(llvm::raw_ostream &os) override {
       os << "RandomPathSearcher\n";
     }
   };

@@ -73,7 +73,7 @@ ExecutionState::ExecutionState(KFunction *kf) :
     pc(kf->instructions),
     prevPC(pc),
     depth(0),
-    ptreeNode(nullptr),
+    ptreeNodeID(0),
     steppedInstructions(0),
     instsSinceCovNew(0),
     coveredNew(false),
@@ -83,7 +83,7 @@ ExecutionState::ExecutionState(KFunction *kf) :
 }
 
 ExecutionState::ExecutionState(const std::vector<ref<Expr>> &assumptions)
-    : constraints(assumptions), ptreeNode(nullptr) {}
+    : constraints(assumptions), ptreeNodeID(0) {}
 
 ExecutionState::~ExecutionState() {
   for (const auto &cur_mergehandler: openMergeStack){
@@ -105,7 +105,7 @@ ExecutionState::ExecutionState(const ExecutionState& state):
     pathOS(state.pathOS),
     symPathOS(state.symPathOS),
     coveredLines(state.coveredLines),
-    ptreeNode(state.ptreeNode),
+    ptreeNodeID(state.ptreeNodeID),
     symbolics(state.symbolics),
     arrayNames(state.arrayNames),
     openMergeStack(state.openMergeStack),

@@ -260,42 +260,32 @@ bool WeightedRandomSearcher::empty() {
 }
 
 ///
-RandomPathSearcher::RandomPathSearcher(Executor &_executor)
-  : executor(_executor) {
-}
-
-RandomPathSearcher::~RandomPathSearcher() {
-}
 
 ExecutionState &RandomPathSearcher::selectState() {
-  unsigned flips=0, bits=0;
-  PTreeNode *n = executor.processTree->root.get();
-  while (!n->state) {
-    if (!n->left) {
-      n = n->right.get();
-    } else if (!n->right) {
-      n = n->left.get();
+  unsigned flips = 0, bits = 0;
+  const auto &ptree = *executor.processTree;
+  const PTreeNode * node = ptree.getNode(klee::PTree::getRootID());
+
+  while (!node->state) {
+    if (!node->left) {
+      node = ptree.getNode(node->right);
+    } else if (!node->right) {
+      node = ptree.getNode(node->left);
     } else {
-      if (bits==0) {
+      if (bits == 0) {
         flips = theRNG.getInt32();
         bits = 32;
       }
       --bits;
-      n = (flips&(1<<bits)) ? n->left.get() : n->right.get();
+      node = (flips & (1U << bits)) ? ptree.getNode(node->left) : ptree.getNode(node->right);
     }
   }
 
-  return *n->state;
+  return *node->state;
 }
 
-void
-RandomPathSearcher::update(ExecutionState *current,
-                           const std::vector<ExecutionState *> &addedStates,
-                           const std::vector<ExecutionState *> &removedStates) {
-}
-
-bool RandomPathSearcher::empty() { 
-  return executor.states.empty(); 
+bool RandomPathSearcher::empty() {
+  return executor.states.empty();
 }
 
 ///
