@@ -322,7 +322,7 @@ public:
   /// Returns the number of test cases successfully generated so far
   unsigned getNumTestCases() { return m_numGeneratedTests; }
   unsigned getNumPathsExplored() { return m_pathsExplored; }
-  void incPathsExplored() { m_pathsExplored++; }
+  void incPathsExplored(std::uint32_t num = 1) { m_pathsExplored += num; }
 
   void setInterpreter(Interpreter *i);
 

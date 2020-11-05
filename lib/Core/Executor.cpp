@@ -3399,8 +3399,10 @@ bool Executor::checkMemoryUsage() {
 }
 
 void Executor::doDumpStates() {
-  if (!DumpStatesOnHalt || states.empty())
+  if (!DumpStatesOnHalt || states.empty()) {
+    interpreterHandler->incPathsExplored(states.size());
     return;
+  }
 
   klee_message("halting execution, dumping remaining states");
   for (const auto &state : states)
