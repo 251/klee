@@ -447,6 +447,11 @@ void StatsTracker::writeStatsHeader() {
              << "NumBranches INTEGER,"
              << "UserTime REAL,"
              << "NumStates INTEGER,"
+             << "TExit INTEGER,"
+             << "TEarly INTEGER,"
+             << "TProgramError INTEGER,"
+             << "TUserError INTEGER,"
+             << "TExecutionError INTEGER,"
              << "MallocUsage INTEGER,"
              << "NumQueries INTEGER,"
              << "NumQueryConstructs INTEGER,"
@@ -480,6 +485,11 @@ void StatsTracker::writeStatsHeader() {
              << "NumBranches,"
              << "UserTime,"
              << "NumStates,"
+             << "TExit,"
+             << "TEarly,"
+             << "TProgramError,"
+             << "TUserError,"
+             << "TExecutionError,"
              << "MallocUsage,"
              << "NumQueries,"
              << "NumQueryConstructs,"
@@ -495,6 +505,11 @@ void StatsTracker::writeStatsHeader() {
              << "QueryCexCacheHits,"
              << "ArrayHashTime"
          << ") VALUES ("
+             << "?,"
+             << "?,"
+             << "?,"
+             << "?,"
+             << "?,"
              << "?,"
              << "?,"
              << "?,"
@@ -533,23 +548,28 @@ void StatsTracker::writeStatsLine() {
   sqlite3_bind_int64(insertStmt, 4, numBranches);
   sqlite3_bind_int64(insertStmt, 5, time::getUserTime().toMicroseconds());
   sqlite3_bind_int64(insertStmt, 6, executor.states.size());
-  sqlite3_bind_int64(insertStmt, 7, util::GetTotalMallocUsage() + executor.memory->getUsedDeterministicSize());
-  sqlite3_bind_int64(insertStmt, 8, stats::queries);
-  sqlite3_bind_int64(insertStmt, 9, stats::queryConstructs);
-  sqlite3_bind_int64(insertStmt, 10, elapsed().toMicroseconds());
-  sqlite3_bind_int64(insertStmt, 11, stats::coveredInstructions);
-  sqlite3_bind_int64(insertStmt, 12, stats::uncoveredInstructions);
-  sqlite3_bind_int64(insertStmt, 13, stats::queryTime);
-  sqlite3_bind_int64(insertStmt, 14, stats::solverTime);
-  sqlite3_bind_int64(insertStmt, 15, stats::cexCacheTime);
-  sqlite3_bind_int64(insertStmt, 16, stats::forkTime);
-  sqlite3_bind_int64(insertStmt, 17, stats::resolveTime);
-  sqlite3_bind_int64(insertStmt, 18, stats::queryCexCacheMisses);
-  sqlite3_bind_int64(insertStmt, 19, stats::queryCexCacheHits);
+  sqlite3_bind_int64(insertStmt, 7, stats::termExit);
+  sqlite3_bind_int64(insertStmt, 8, stats::termEarly);
+  sqlite3_bind_int64(insertStmt, 9, stats::termProgErr);
+  sqlite3_bind_int64(insertStmt, 10, stats::termUserErr);
+  sqlite3_bind_int64(insertStmt, 11, stats::termExecErr);
+  sqlite3_bind_int64(insertStmt, 12, util::GetTotalMallocUsage() + executor.memory->getUsedDeterministicSize());
+  sqlite3_bind_int64(insertStmt, 13, stats::queries);
+  sqlite3_bind_int64(insertStmt, 14, stats::queryConstructs);
+  sqlite3_bind_int64(insertStmt, 15, elapsed().toMicroseconds());
+  sqlite3_bind_int64(insertStmt, 16, stats::coveredInstructions);
+  sqlite3_bind_int64(insertStmt, 17, stats::uncoveredInstructions);
+  sqlite3_bind_int64(insertStmt, 18, stats::queryTime);
+  sqlite3_bind_int64(insertStmt, 19, stats::solverTime);
+  sqlite3_bind_int64(insertStmt, 20, stats::cexCacheTime);
+  sqlite3_bind_int64(insertStmt, 21, stats::forkTime);
+  sqlite3_bind_int64(insertStmt, 22, stats::resolveTime);
+  sqlite3_bind_int64(insertStmt, 23, stats::queryCexCacheMisses);
+  sqlite3_bind_int64(insertStmt, 24, stats::queryCexCacheHits);
 #ifdef KLEE_ARRAY_DEBUG
-  sqlite3_bind_int64(insertStmt, 20, stats::arrayHashTime);
+  sqlite3_bind_int64(insertStmt, 25, stats::arrayHashTime);
 #else
-  sqlite3_bind_int64(insertStmt, 20, -1LL);
+  sqlite3_bind_int64(insertStmt, 25, -1LL);
 #endif
   int errCode = sqlite3_step(insertStmt);
   if(errCode != SQLITE_DONE) klee_error("Error writing stats data: %s", sqlite3_errmsg(statsFile));

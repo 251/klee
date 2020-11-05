@@ -3395,8 +3395,11 @@ bool Executor::checkMemoryUsage() {
 }
 
 void Executor::doDumpStates() {
-  if (!WriteTests.isSet(StateTerminationClass::Early) || states.empty())
+  if (!WriteTests.isSet(StateTerminationClass::Early) || states.empty()) {
+    // add remaining states to stats
+    stats::termEarly += states.size();
     return;
+  }
 
   klee_message("halting execution, dumping remaining states");
   for (const auto &state : states)
@@ -3604,6 +3607,7 @@ bool shouldWriteTest(const ExecutionState &state, StateTerminationClass terminat
 void Executor::terminateStateOnExit(ExecutionState &state) {
   if (shouldWriteTest(state, StateTerminationClass::Exit) || (AlwaysOutputSeeds && seedMap.count(&state)))
     interpreterHandler->processTestCase(state, nullptr, stateTerminationTypeSuffix[(std::uint32_t)StateTerminationType::Exit]);
+  ++stats::termExit;
   terminateState(state, StateTerminationType::Exit);
 }
 
@@ -3614,10 +3618,12 @@ void Executor::terminateStateEarly(ExecutionState &state, const Twine &message,
       || (AlwaysOutputSeeds && seedMap.count(&state)))
     interpreterHandler->processTestCase(state, (message + "\n").str().c_str(),
                                         stateTerminationTypeSuffix[(std::uint32_t)terminationType]);
+  ++stats::termEarly;
   terminateState(state, terminationType);
 }
 
 void Executor::terminateStateOnUserError(ExecutionState &state, const llvm::Twine &message) {
+  ++stats::termUserErr;
   terminateStateOnError(state, message, StateTerminationType::User, "",
                         nullptr, StateTerminationClass::UserErr);
 }
@@ -3671,6 +3677,9 @@ void Executor::terminateStateOnError(ExecutionState &state,
                                      const llvm::Twine &info,
                                      const char *suffix,
                                      StateTerminationClass terminationClass) {
+  if (terminationClass == StateTerminationClass::ProgErr)
+    ++stats::termProgErr;
+
   if (shouldWriteTest(state, terminationClass)) {
     std::string message = messaget.str();
     static std::set< std::pair<Instruction*, std::string> > emittedErrors;
@@ -3714,6 +3723,7 @@ void Executor::terminateStateOnError(ExecutionState &state,
 void Executor::terminateStateOnExecError(ExecutionState &state,
                                          const llvm::Twine &message,
                                          const llvm::Twine &info) {
+  ++stats::termExecErr;
   terminateStateOnError(state, message, StateTerminationType::Execution,
                         info, nullptr, StateTerminationClass::ExecErr);
 }

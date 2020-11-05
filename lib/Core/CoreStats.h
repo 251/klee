@@ -34,6 +34,13 @@ namespace stats {
   /// isn't normally up-to-date.
   extern Statistic states;
 
+  // Termination Statistics
+  extern Statistic termExit;
+  extern Statistic termEarly;
+  extern Statistic termProgErr;
+  extern Statistic termUserErr;
+  extern Statistic termExecErr;
+
   /// Instruction level statistic for tracking number of reachable
   /// uncovered instructions.
   extern Statistic reachableUncovered;
