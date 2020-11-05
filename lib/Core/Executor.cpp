@@ -127,10 +127,26 @@ namespace {
 
 /*** Test generation options ***/
 
-cl::opt<bool> DumpStatesOnHalt(
-    "dump-states-on-halt",
-    cl::init(true),
-    cl::desc("Dump test cases for all active states on exit (default=true)"),
+// HACK: we can't specify an init value and therefore use "none" as special value
+// to indicate an empty list; an empty list means _all_ tests are active (default)
+cl::bits<StateTerminationClass> WriteTests(
+    "write-tests",
+    cl::desc("Select termination classes for which tests should be generated "
+             "(default=exit,early,error,user-error,execution-error)"),
+    cl::values(
+        clEnumValN(StateTerminationClass::NONE, "none", "Disable test generation"),
+        clEnumValN(StateTerminationClass::Exit, "exit",
+                   "States that terminate normally"),
+        clEnumValN(StateTerminationClass::Early, "early",
+                   "Early terminated states (e.g. max-depth, out-of-memory, timeout)"),
+        clEnumValN(StateTerminationClass::ProgErr, "error", //
+                   "States with detected error (e.g. abort, invalid pointer)"),
+        clEnumValN(StateTerminationClass::UserErr, "user-error",
+                   "States with error caused by user (e.g. invalid arguments to KLEE API functions)"),
+        clEnumValN(StateTerminationClass::ExecErr, "execution-error",
+                   "States that cause internal errors.") KLEE_LLVM_CL_VAL_END),
+    cl::CommaSeparated,
+    cl::ZeroOrMore,
     cl::cat(TestGenCat));
 
 cl::opt<bool> OnlyOutputStatesCoveringNew(
@@ -267,33 +283,27 @@ cl::opt<std::string>
 
 /*** Termination criteria options ***/
 
-cl::list<Executor::TerminateReason> ExitOnErrorType(
+cl::list<StateTerminationType> ExitOnErrorType(
     "exit-on-error-type",
     cl::desc(
         "Stop execution after reaching a specified condition (default=false)"),
     cl::values(
-        clEnumValN(Executor::Abort, "Abort", "The program crashed"),
-        clEnumValN(Executor::Assert, "Assert", "An assertion was hit"),
-        clEnumValN(Executor::BadVectorAccess, "BadVectorAccess",
+        clEnumValN(StateTerminationType::Abort, "Abort", "The program crashed (reached abort()/klee_abort())"),
+        clEnumValN(StateTerminationType::Assert, "Assert", "An assertion was hit"),
+        clEnumValN(StateTerminationType::BadVectorAccess, "BadVectorAccess",
                    "Vector accessed out of bounds"),
-        clEnumValN(Executor::Exec, "Exec",
+        clEnumValN(StateTerminationType::Execution, "Execution",
                    "Trying to execute an unexpected instruction"),
-        clEnumValN(Executor::External, "External",
+        clEnumValN(StateTerminationType::External, "External",
                    "External objects referenced"),
-        clEnumValN(Executor::Free, "Free", "Freeing invalid memory"),
-        clEnumValN(Executor::Model, "Model", "Memory model limit hit"),
-        clEnumValN(Executor::Overflow, "Overflow", "An overflow occurred"),
-        clEnumValN(Executor::Ptr, "Ptr", "Pointer error"),
-        clEnumValN(Executor::ReadOnly, "ReadOnly", "Write to read-only memory"),
-        clEnumValN(Executor::ReportError, "ReportError",
+        clEnumValN(StateTerminationType::Free, "Free", "Freeing invalid memory"),
+        clEnumValN(StateTerminationType::Model, "Model", "Memory model limit hit"),
+        clEnumValN(StateTerminationType::Overflow, "Overflow", "An overflow occurred"),
+        clEnumValN(StateTerminationType::Ptr, "Ptr", "Pointer error"),
+        clEnumValN(StateTerminationType::ReadOnly, "ReadOnly", "Write to read-only memory"),
+        clEnumValN(StateTerminationType::ReportError, "ReportError",
                    "klee_report_error called"),
-        clEnumValN(Executor::User, "User", "Wrong klee_* functions invocation"),
-        clEnumValN(Executor::UncaughtException, "UncaughtException",
-                   "Exception was not caught"),
-        clEnumValN(Executor::UnexpectedException, "UnexpectedException",
-                   "An unexpected exception was thrown"),
-        clEnumValN(Executor::Unhandled, "Unhandled",
-                   "Unhandled instruction hit") KLEE_LLVM_CL_VAL_END),
+        clEnumValN(StateTerminationType::User, "User", "Wrong klee_* functions invocation") KLEE_LLVM_CL_VAL_END),
     cl::ZeroOrMore,
     cl::cat(TerminationCat));
 
@@ -428,25 +438,6 @@ cl::opt<bool> DebugCheckForImpliedValues(
 extern "C" unsigned dumpStates, dumpPTree;
 unsigned dumpStates = 0, dumpPTree = 0;
 
-const char *Executor::TerminateReasonNames[] = {
-  [ Abort ] = "abort",
-  [ Assert ] = "assert",
-  [ BadVectorAccess ] = "bad_vector_access",
-  [ Exec ] = "exec",
-  [ External ] = "external",
-  [ Free ] = "free",
-  [ Model ] = "model",
-  [ Overflow ] = "overflow",
-  [ Ptr ] = "ptr",
-  [ ReadOnly ] = "readonly",
-  [ ReportError ] = "reporterror",
-  [ User ] = "user",
-  [ UncaughtException ] = "uncaught_exception",
-  [ UnexpectedException ] = "unexpected_exception",
-  [ Unhandled ] = "xxx",
-};
-
-
 Executor::Executor(LLVMContext &ctx, const InterpreterOptions &opts,
                    InterpreterHandler *ih)
     : Interpreter(opts), interpreterHandler(ih), searcher(0),
@@ -464,6 +455,7 @@ Executor::Executor(LLVMContext &ctx, const InterpreterOptions &opts,
         setHaltExecution(true);
       }));
 
+  // instantiate solver
   coreSolverTimeout = time::Span{MaxCoreSolverTime};
   if (coreSolverTimeout) UseForkedCoreSolver = true;
   Solver *coreSolver = klee::createCoreSolver(CoreSolverToUse);
@@ -481,11 +473,29 @@ Executor::Executor(LLVMContext &ctx, const InterpreterOptions &opts,
   this->solver = new TimingSolver(solver, EqualitySubstitution);
   memory = new MemoryManager(&arrayCache);
 
+  // set default searcher
   initializeSearchOptions();
+
+  // test generation configuration
+  if (WriteTests.isSet(StateTerminationClass::NONE)) {
+    // error if anything but NONE set
+    if (WriteTests.getBits() > 1)
+      klee_error("--write-test=none combined with other test category");
+  } else {
+    // fill empty option (default: write all tests)
+    if (!WriteTests.getBits()) {
+      WriteTests.addValue(StateTerminationClass::Exit);
+      WriteTests.addValue(StateTerminationClass::Early);
+      WriteTests.addValue(StateTerminationClass::ProgErr);
+      WriteTests.addValue(StateTerminationClass::UserErr);
+      WriteTests.addValue(StateTerminationClass::ExecErr);
+    }
+  }
 
   if (OnlyOutputStatesCoveringNew && !StatsTracker::useIStats())
     klee_error("To use --only-output-states-covering-new, you need to enable --output-istats.");
 
+  // debug options
   if (DebugPrintInstructions.isSet(FILE_ALL) ||
       DebugPrintInstructions.isSet(FILE_COMPACT) ||
       DebugPrintInstructions.isSet(FILE_SRC)) {
@@ -946,8 +956,8 @@ void Executor::branch(ExecutionState &state,
     if (OnlyReplaySeeds) {
       for (unsigned i=0; i<N; ++i) {
         if (result[i] && !seedMap.count(result[i])) {
-          terminateState(*result[i]);
-          result[i] = NULL;
+          terminateStateEarly(*result[i], "Unseeded path during replay", StateTerminationType::Replay);
+          result[i] = nullptr;
         }
       } 
     }
@@ -1002,7 +1012,7 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
   solver->setTimeout(time::Span());
   if (!success) {
     current.pc = current.prevPC;
-    terminateStateEarly(current, "Query timed out (fork).");
+    terminateStateEarly(current, "Query timed out (fork).", StateTerminationType::Solver);
     return StatePair(0, 0);
   }
 
@@ -1165,8 +1175,8 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal) {
 
     // Kinda gross, do we even really still want this option?
     if (MaxDepth && MaxDepth<=trueState->depth) {
-      terminateStateEarly(*trueState, "max-depth exceeded.");
-      terminateStateEarly(*falseState, "max-depth exceeded.");
+      terminateStateEarly(*trueState, "max-depth exceeded.", StateTerminationType::MaxDepth);
+      terminateStateEarly(*falseState, "max-depth exceeded.", StateTerminationType::MaxDepth);
       return StatePair(0, 0);
     }
 
@@ -1444,9 +1454,8 @@ MemoryObject *Executor::serializeLandingpad(ExecutionState &state,
       } else if (current_clause->isNullValue()) {
         ti_addr = 0;
       } else {
-        terminateStateOnError(
-            state, "Internal: Clause is not a bitcast or null (catch-all)",
-            Exec);
+        terminateStateOnExecError(
+            state, "Internal: Clause is not a bitcast or null (catch-all)");
         stateTerminated = true;
         return nullptr;
       }
@@ -1470,8 +1479,8 @@ MemoryObject *Executor::serializeLandingpad(ExecutionState &state,
 
         if (num_elements >=
             std::numeric_limits<decltype(serialized_num_elements)>::max()) {
-          terminateStateOnError(
-              state, "Internal: too many elements in landingpad filter", Exec);
+          terminateStateOnExecError(
+              state, "Internal: too many elements in landingpad filter");
           stateTerminated = true;
           return nullptr;
         }
@@ -1484,10 +1493,9 @@ MemoryObject *Executor::serializeLandingpad(ExecutionState &state,
           llvm::BitCastOperator const *bitcast =
               dyn_cast<llvm::BitCastOperator>(v);
           if (!bitcast) {
-            terminateStateOnError(state,
-                                  "Internal: expected value inside a "
-                                  "filter-clause to be a bitcast",
-                                  Exec);
+            terminateStateOnExecError(state,
+                                      "Internal: expected value inside a "
+                                      "filter-clause to be a bitcast");
             stateTerminated = true;
             return nullptr;
           }
@@ -1495,10 +1503,9 @@ MemoryObject *Executor::serializeLandingpad(ExecutionState &state,
           llvm::GlobalValue const *clause_value =
               dyn_cast<GlobalValue>(bitcast->getOperand(0));
           if (!clause_value) {
-            terminateStateOnError(state,
-                                  "Internal: expected value inside a "
-                                  "filter-clause bitcast to be a GlobalValue",
-                                  Exec);
+            terminateStateOnExecError(state,
+                                      "Internal: expected value inside a "
+                                      "filter-clause bitcast to be a GlobalValue");
             stateTerminated = true;
             return nullptr;
           }
@@ -1762,7 +1769,7 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
       // well.
     default:
       klee_warning("unimplemented intrinsic: %s", f->getName().data());
-      terminateStateOnError(state, "unimplemented intrinsic", Unhandled);
+      terminateStateOnExecError(state, "unimplemented intrinsic");
       return;
     }
 
@@ -1779,7 +1786,7 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
     // Check if maximum stack size was reached.
     // We currently only count the number of stack frames
     if (RuntimeMaxStackFrames && state.stack.size() > RuntimeMaxStackFrames) {
-      terminateStateEarly(state, "Maximum stack size reached.");
+      terminateStateEarly(state, "Maximum stack size reached.", StateTerminationType::OutOfStackMemory);
       klee_warning("Maximum stack size reached.");
       return;
     }
@@ -1805,14 +1812,12 @@ void Executor::executeCall(ExecutionState &state, KInstruction *ki, Function *f,
         klee_warning_once(f, "calling %s with extra arguments.",
                           f->getName().data());
       } else if (callingArgs < funcArgs) {
-        terminateStateOnError(state, "calling function with too few arguments",
-                              User);
+        terminateStateOnUserError(state, "calling function with too few arguments");
         return;
       }
     } else {
       if (callingArgs < funcArgs) {
-        terminateStateOnError(state, "calling function with too few arguments",
-                              User);
+        terminateStateOnUserError(state, "calling function with too few arguments");
         return;
       }
 
@@ -3083,9 +3088,8 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
 
     ConstantExpr *cIdx = dyn_cast<ConstantExpr>(idx);
     if (cIdx == NULL) {
-      terminateStateOnError(
-          state, "InsertElement, support for symbolic index not implemented",
-          Unhandled);
+      terminateStateOnExecError(
+          state, "InsertElement, support for symbolic index not implemented");
       return;
     }
     uint64_t iIdx = cIdx->getZExtValue();
@@ -3095,7 +3099,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     if (iIdx >= vt->getNumElements()) {
       // Out of bounds write
       terminateStateOnError(state, "Out of bounds write when inserting element",
-                            BadVectorAccess);
+                            StateTerminationType::BadVectorAccess);
       return;
     }
 
@@ -3121,9 +3125,8 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
 
     ConstantExpr *cIdx = dyn_cast<ConstantExpr>(idx);
     if (cIdx == NULL) {
-      terminateStateOnError(
-          state, "ExtractElement, support for symbolic index not implemented",
-          Unhandled);
+      terminateStateOnExecError(
+          state, "ExtractElement, support for symbolic index not implemented");
       return;
     }
     uint64_t iIdx = cIdx->getZExtValue();
@@ -3133,7 +3136,7 @@ void Executor::executeInstruction(ExecutionState &state, KInstruction *ki) {
     if (iIdx >= vt->getNumElements()) {
       // Out of bounds read
       terminateStateOnError(state, "Out of bounds read when extracting element",
-                            BadVectorAccess);
+                            StateTerminationType::BadVectorAccess);
       return;
     }
 
@@ -3382,19 +3385,19 @@ bool Executor::checkMemoryUsage() {
       idx = theRNG.getInt32() % N;
 
     std::swap(arr[idx], arr[N - 1]);
-    terminateStateEarly(*arr[N - 1], "Memory limit exceeded.");
+    terminateStateEarly(*arr[N - 1], "Memory limit exceeded.", StateTerminationType::OutOfMemory);
   }
 
   return false;
 }
 
 void Executor::doDumpStates() {
-  if (!DumpStatesOnHalt || states.empty())
+  if (!WriteTests.isSet(StateTerminationClass::Early) || states.empty())
     return;
 
   klee_message("halting execution, dumping remaining states");
   for (const auto &state : states)
-    terminateStateEarly(*state, "Execution halting.");
+    terminateStateEarly(*state, "Execution halting.", StateTerminationType::Interrupted);
   updateStates(nullptr);
 }
 
@@ -3560,38 +3563,55 @@ void Executor::terminateState(ExecutionState &state) {
 
   interpreterHandler->incPathsExplored();
 
-  std::vector<ExecutionState *>::iterator it =
-      std::find(addedStates.begin(), addedStates.end(), &state);
-  if (it==addedStates.end()) {
+  // add state to removedStates for next searcher update
+  auto it = std::find(addedStates.begin(), addedStates.end(), &state);
+  if (it == addedStates.end()) {
     state.pc = state.prevPC;
-
     removedStates.push_back(&state);
-  } else {
-    // never reached searcher, just delete immediately
-    std::map< ExecutionState*, std::vector<SeedInfo> >::iterator it3 = 
-      seedMap.find(&state);
-    if (it3 != seedMap.end())
-      seedMap.erase(it3);
-    addedStates.erase(it);
-    processTree->remove(state.ptreeNode);
-    delete &state;
+    return;
   }
+  // ... or just delete immediately if never reached searcher
+  auto it2 = seedMap.find(&state);
+  if (it2 != seedMap.end())
+    seedMap.erase(it2);
+  addedStates.erase(it);
+  processTree->remove(state.ptreeNode);
+  delete &state;
 }
 
-void Executor::terminateStateEarly(ExecutionState &state, 
-                                   const Twine &message) {
-  if (!OnlyOutputStatesCoveringNew || state.coveredNew ||
-      (AlwaysOutputSeeds && seedMap.count(&state)))
-    interpreterHandler->processTestCase(state, (message + "\n").str().c_str(),
-                                        "early");
-  terminateState(state);
+bool shouldWriteTest(const ExecutionState &state, StateTerminationClass terminationClass) {
+  // invalid termination class for given configuration
+  if (!WriteTests.isSet(terminationClass))
+    return false;
+
+  // no new coverage
+  if (OnlyOutputStatesCoveringNew
+      && terminationClass <= StateTerminationClass::Early
+      && !state.coveredNew)
+    return false;
+
+  return true;
 }
 
 void Executor::terminateStateOnExit(ExecutionState &state) {
-  if (!OnlyOutputStatesCoveringNew || state.coveredNew || 
-      (AlwaysOutputSeeds && seedMap.count(&state)))
-    interpreterHandler->processTestCase(state, 0, 0);
+  if (shouldWriteTest(state, StateTerminationClass::Exit) || (AlwaysOutputSeeds && seedMap.count(&state)))
+    interpreterHandler->processTestCase(state, nullptr, stateTerminationTypeSuffix[(std::uint32_t)StateTerminationType::Exit]);
   terminateState(state);
+}
+
+void Executor::terminateStateEarly(ExecutionState &state, const Twine &message,
+                                   StateTerminationType terminationType) {
+  if ((shouldWriteTest(state, StateTerminationClass::Early)
+       && terminationType <= StateTerminationType::MARK_EARLY) // exclude solver/merge
+      || (AlwaysOutputSeeds && seedMap.count(&state)))
+    interpreterHandler->processTestCase(state, (message + "\n").str().c_str(),
+                                        stateTerminationTypeSuffix[(std::uint32_t)terminationType]);
+  terminateState(state, terminationType);
+}
+
+void Executor::terminateStateOnUserError(ExecutionState &state, const llvm::Twine &message) {
+  terminateStateOnError(state, message, StateTerminationType::User, "",
+                        nullptr, StateTerminationClass::UserErr);
 }
 
 const InstructionInfo & Executor::getLastNonKleeInternalInstruction(const ExecutionState &state,
@@ -3637,68 +3657,67 @@ const InstructionInfo & Executor::getLastNonKleeInternalInstruction(const Execut
   return *ii;
 }
 
-bool Executor::shouldExitOn(enum TerminateReason termReason) {
-  std::vector<TerminateReason>::iterator s = ExitOnErrorType.begin();
-  std::vector<TerminateReason>::iterator e = ExitOnErrorType.end();
-
-  for (; s != e; ++s)
-    if (termReason == *s)
-      return true;
-
-  return false;
+bool shouldExitOn(StateTerminationType reason) {
+  auto it = std::find(ExitOnErrorType.begin(), ExitOnErrorType.end(), reason);
+  return it != ExitOnErrorType.end();
 }
 
 void Executor::terminateStateOnError(ExecutionState &state,
                                      const llvm::Twine &messaget,
-                                     enum TerminateReason termReason,
+                                     StateTerminationType terminationType,
+                                     const llvm::Twine &info,
                                      const char *suffix,
-                                     const llvm::Twine &info) {
-  std::string message = messaget.str();
-  static std::set< std::pair<Instruction*, std::string> > emittedErrors;
-  Instruction * lastInst;
-  const InstructionInfo &ii = getLastNonKleeInternalInstruction(state, &lastInst);
-  
-  if (EmitAllErrors ||
-      emittedErrors.insert(std::make_pair(lastInst, message)).second) {
-    if (ii.file != "") {
-      klee_message("ERROR: %s:%d: %s", ii.file.c_str(), ii.line, message.c_str());
-    } else {
-      klee_message("ERROR: (location information missing) %s", message.c_str());
+                                     StateTerminationClass terminationClass) {
+  if (shouldWriteTest(state, terminationClass)) {
+    std::string message = messaget.str();
+    static std::set< std::pair<Instruction*, std::string> > emittedErrors;
+    Instruction * lastInst;
+    const InstructionInfo &ii = getLastNonKleeInternalInstruction(state, &lastInst);
+
+    if (EmitAllErrors ||
+        emittedErrors.insert(std::make_pair(lastInst, message)).second) {
+      if (!ii.file.empty()) {
+        klee_message("ERROR: %s:%d: %s", ii.file.c_str(), ii.line, message.c_str());
+      } else {
+        klee_message("ERROR: (location information missing) %s", message.c_str());
+      }
+      if (!EmitAllErrors)
+        klee_message("NOTE: now ignoring this error at this location");
+
+      std::string MsgString;
+      llvm::raw_string_ostream msg(MsgString);
+      msg << "Error: " << message << '\n';
+      if (!ii.file.empty()) {
+        msg << "File: " << ii.file << '\n'
+            << "Line: " << ii.line << '\n'
+            << "assembly.ll line: " << ii.assemblyLine << '\n'
+            << "State: " << state.getID() << '\n';
+      }
+      msg << "Stack: \n";
+      state.dumpStack(msg);
+
+      std::string info_str = info.str();
+      if (!info_str.empty())
+        msg << "Info: \n" << info_str;
+
+      const char * file_suffix = suffix ? suffix : stateTerminationTypeSuffix[(std::uint32_t)terminationType];
+      interpreterHandler->processTestCase(state, msg.str().c_str(), file_suffix);
     }
-    if (!EmitAllErrors)
-      klee_message("NOTE: now ignoring this error at this location");
-
-    std::string MsgString;
-    llvm::raw_string_ostream msg(MsgString);
-    msg << "Error: " << message << '\n';
-    if (ii.file != "") {
-      msg << "File: " << ii.file << '\n'
-          << "Line: " << ii.line << '\n'
-          << "assembly.ll line: " << ii.assemblyLine << '\n'
-          << "State: " << state.getID() << '\n';
-    }
-    msg << "Stack: \n";
-    state.dumpStack(msg);
-
-    std::string info_str = info.str();
-    if (info_str != "")
-      msg << "Info: \n" << info_str;
-
-    std::string suffix_buf;
-    if (!suffix) {
-      suffix_buf = TerminateReasonNames[termReason];
-      suffix_buf += ".err";
-      suffix = suffix_buf.c_str();
-    }
-
-    interpreterHandler->processTestCase(state, msg.str().c_str(), suffix);
   }
-    
+
   terminateState(state);
 
-  if (shouldExitOn(termReason))
+  if (shouldExitOn(terminationType))
     haltExecution = true;
 }
+
+void Executor::terminateStateOnExecError(ExecutionState &state,
+                                         const llvm::Twine &message,
+                                         const llvm::Twine &info) {
+  terminateStateOnError(state, message, StateTerminationType::Execution,
+                        info, nullptr, StateTerminationClass::ExecErr);
+}
+
 
 // XXX shoot me
 static const char *okExternalsList[] = { "printf", 
@@ -3721,7 +3740,7 @@ void Executor::callExternalFunction(ExecutionState &state,
       && !okExternals.count(function->getName())) {
     klee_warning("Disallowed call to external function: %s\n",
                function->getName().str().c_str());
-    terminateStateOnError(state, "external calls disallowed", User);
+    terminateStateOnUserError(state, "external calls disallowed");
     return;
   }
 
@@ -3808,13 +3827,13 @@ void Executor::callExternalFunction(ExecutionState &state,
   bool success = externalDispatcher->executeCall(function, target->inst, args);
   if (!success) {
     terminateStateOnError(state, "failed external call: " + function->getName(),
-                          External);
+                          StateTerminationType::External);
     return;
   }
 
   if (!state.addressSpace.copyInConcretes()) {
     terminateStateOnError(state, "external modified read-only object",
-                          External);
+                          StateTerminationType::External);
     return;
   }
 
@@ -3988,7 +4007,7 @@ void Executor::executeAlloc(ExecutionState &state,
           info << "  concretization : " << example << "\n";
           info << "  unbound example: " << tmp << "\n";
           terminateStateOnError(*hugeSize.second, "concretized symbolic size",
-                                Model, NULL, info.str());
+                                StateTerminationType::Model, info.str());
         }
       }
     }
@@ -4016,10 +4035,12 @@ void Executor::executeFree(ExecutionState &state,
            ie = rl.end(); it != ie; ++it) {
       const MemoryObject *mo = it->first.first;
       if (mo->isLocal) {
-        terminateStateOnError(*it->second, "free of alloca", Free, NULL,
+        terminateStateOnError(*it->second, "free of alloca",
+                              StateTerminationType::Free,
                               getAddressInfo(*it->second, address));
       } else if (mo->isGlobal) {
-        terminateStateOnError(*it->second, "free of global", Free, NULL,
+        terminateStateOnError(*it->second, "free of global",
+                              StateTerminationType::Free,
                               getAddressInfo(*it->second, address));
       } else {
         it->second->addressSpace.unbindObject(mo);
@@ -4056,7 +4077,7 @@ void Executor::resolveExact(ExecutionState &state,
 
   if (unbound) {
     terminateStateOnError(*unbound, "memory error: invalid pointer: " + name,
-                          Ptr, NULL, getAddressInfo(*unbound, p));
+                          StateTerminationType::Ptr, getAddressInfo(*unbound, p));
   }
 }
 
@@ -4106,7 +4127,7 @@ void Executor::executeMemoryOperation(ExecutionState &state,
     solver->setTimeout(time::Span());
     if (!success) {
       state.pc = state.prevPC;
-      terminateStateEarly(state, "Query timed out (bounds check).");
+      terminateStateEarly(state, "Query timed out (bounds check).", StateTerminationType::Solver);
       return;
     }
 
@@ -4115,7 +4136,7 @@ void Executor::executeMemoryOperation(ExecutionState &state,
       if (isWrite) {
         if (os->readOnly) {
           terminateStateOnError(state, "memory error: object read only",
-                                ReadOnly);
+                                StateTerminationType::ReadOnly);
         } else {
           ObjectState *wos = state.addressSpace.getWriteable(mo, os);
           wos->write(offset, value);
@@ -4159,7 +4180,7 @@ void Executor::executeMemoryOperation(ExecutionState &state,
       if (isWrite) {
         if (os->readOnly) {
           terminateStateOnError(*bound, "memory error: object read only",
-                                ReadOnly);
+                                StateTerminationType::ReadOnly);
         } else {
           ObjectState *wos = bound->addressSpace.getWriteable(mo, os);
           wos->write(mo->getOffsetExpr(address), value);
@@ -4178,10 +4199,11 @@ void Executor::executeMemoryOperation(ExecutionState &state,
   // XXX should we distinguish out of bounds and overlapped cases?
   if (unbound) {
     if (incomplete) {
-      terminateStateEarly(*unbound, "Query timed out (resolve).");
+      terminateStateEarly(*unbound, "Query timed out (resolve).", StateTerminationType::Solver);
     } else {
-      terminateStateOnError(*unbound, "memory error: out of bound pointer", Ptr,
-                            NULL, getAddressInfo(*unbound, address));
+      terminateStateOnError(*unbound, "memory error: out of bound pointer",
+                            StateTerminationType::Ptr,
+                            getAddressInfo(*unbound, address));
     }
   }
 }
@@ -4216,8 +4238,7 @@ void Executor::executeMakeSymbolic(ExecutionState &state,
             std::vector<unsigned char> &values = si.assignment.bindings[array];
             values = std::vector<unsigned char>(mo->size, '\0');
           } else if (!AllowSeedExtension) {
-            terminateStateOnError(state, "ran out of inputs during seeding",
-                                  User);
+            terminateStateOnUserError(state, "ran out of inputs during seeding");
             break;
           }
         } else {
@@ -4231,7 +4252,7 @@ void Executor::executeMakeSymbolic(ExecutionState &state,
 		<< " vs " << obj->name << "[" << obj->numBytes << "]"
 		<< " in test\n";
 
-            terminateStateOnError(state, msg.str(), User);
+            terminateStateOnUserError(state, msg.str());
             break;
           } else {
             std::vector<unsigned char> &values = si.assignment.bindings[array];
@@ -4248,11 +4269,11 @@ void Executor::executeMakeSymbolic(ExecutionState &state,
   } else {
     ObjectState *os = bindObjectInState(state, mo, false);
     if (replayPosition >= replayKTest->numObjects) {
-      terminateStateOnError(state, "replay count mismatch", User);
+      terminateStateOnUserError(state, "replay count mismatch");
     } else {
       KTestObject *obj = &replayKTest->objects[replayPosition++];
       if (obj->numBytes != mo->size) {
-        terminateStateOnError(state, "replay size mismatch", User);
+        terminateStateOnUserError(state, "replay size mismatch");
       } else {
         for (unsigned i=0; i<mo->size; i++)
           os->write8(i, obj->bytes[i]);

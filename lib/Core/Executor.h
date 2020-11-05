@@ -20,6 +20,7 @@
 
 #include "klee/ADT/RNG.h"
 #include "klee/Core/Interpreter.h"
+#include "klee/Core/TerminationTypes.h"
 #include "klee/Expr/ArrayCache.h"
 #include "klee/Expr/ArrayExprOptimizer.h"
 #include "klee/Module/Cell.h"
@@ -97,30 +98,10 @@ class Executor : public Interpreter {
 public:
   typedef std::pair<ExecutionState*,ExecutionState*> StatePair;
 
-  enum TerminateReason {
-    Abort,
-    Assert,
-    BadVectorAccess,
-    Exec,
-    External,
-    Free,
-    Model,
-    Overflow,
-    Ptr,
-    ReadOnly,
-    ReportError,
-    User,
-    UncaughtException,
-    UnexpectedException,
-    Unhandled,
-  };
-
   /// The random number generator.
   RNG theRNG;
 
 private:
-  static const char *TerminateReasonNames[];
-
   std::unique_ptr<KModule> kmodule;
   InterpreterHandler *interpreterHandler;
   Searcher *searcher;
@@ -423,28 +404,28 @@ private:
   const InstructionInfo & getLastNonKleeInternalInstruction(const ExecutionState &state,
       llvm::Instruction** lastInstruction);
 
-  bool shouldExitOn(enum TerminateReason termReason);
-
   // remove state from queue and delete
   void terminateState(ExecutionState &state);
-  // call exit handler and terminate state
-  void terminateStateEarly(ExecutionState &state, const llvm::Twine &message);
+
   // call exit handler and terminate state
   void terminateStateOnExit(ExecutionState &state);
+  // call exit handler and terminate state
+  void terminateStateEarly(ExecutionState &state, const llvm::Twine &message,
+                           StateTerminationType terminationType);
   // call error handler and terminate state
   void terminateStateOnError(ExecutionState &state, const llvm::Twine &message,
-                             enum TerminateReason termReason,
-                             const char *suffix = NULL,
-                             const llvm::Twine &longMessage = "");
-
+                             StateTerminationType terminationType,
+                             const llvm::Twine &longMessage = "",
+                             const char *suffix = nullptr,
+                             StateTerminationClass terminationClass = StateTerminationClass::ProgErr);
+  // call error handler and terminate state
+  void terminateStateOnUserError(ExecutionState &state, const llvm::Twine &message);
   // call error handler and terminate state, for execution errors
   // (things that should not be possible, like illegal instruction or
-  // unlowered instrinsic, or are unsupported, like inline assembly)
+  // unlowered intrinsic, or are unsupported, like inline assembly)
   void terminateStateOnExecError(ExecutionState &state, 
                                  const llvm::Twine &message,
-                                 const llvm::Twine &info="") {
-    terminateStateOnError(state, message, Exec, NULL, info);
-  }
+                                 const llvm::Twine &info = "");
 
   /// bindModuleConstants - Initialize the module constant table.
   void bindModuleConstants();
