@@ -3398,6 +3398,7 @@ void Executor::doDumpStates() {
   if (!WriteTests.isSet(StateTerminationClass::Early) || states.empty()) {
     // add remaining states to stats
     stats::termEarly += states.size();
+    interpreterHandler->incPathsExplored(states.size());
     return;
   }
 
