@@ -405,7 +405,7 @@ private:
       llvm::Instruction** lastInstruction);
 
   // remove state from queue and delete
-  void terminateState(ExecutionState &state);
+  void terminateState(ExecutionState &state, StateTerminationType terminationType);
 
   // call exit handler and terminate state
   void terminateStateOnExit(ExecutionState &state);

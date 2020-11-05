@@ -283,10 +283,10 @@ cl::opt<std::string>
 
 /*** Termination criteria options ***/
 
-cl::list<StateTerminationType> ExitOnErrorType(
+cl::bits<StateTerminationType> ExitOnErrorType(
     "exit-on-error-type",
     cl::desc(
-        "Stop execution after reaching a specified condition (default=false)"),
+        "Stop execution after reaching a specified condition (default=[])"),
     cl::values(
         clEnumValN(StateTerminationType::Abort, "Abort", "The program crashed (reached abort()/klee_abort())"),
         clEnumValN(StateTerminationType::Assert, "Assert", "An assertion was hit"),
@@ -299,12 +299,15 @@ cl::list<StateTerminationType> ExitOnErrorType(
         clEnumValN(StateTerminationType::Free, "Free", "Freeing invalid memory"),
         clEnumValN(StateTerminationType::Model, "Model", "Memory model limit hit"),
         clEnumValN(StateTerminationType::Overflow, "Overflow", "An overflow occurred"),
+        clEnumValN(StateTerminationType::OutOfMemory, "OutOfMemory", "KLEE reached memory limit"),
+        clEnumValN(StateTerminationType::OutOfStackMemory, "OutOfStackMemory", "Stack limit reached"),
         clEnumValN(StateTerminationType::Ptr, "Ptr", "Pointer error"),
         clEnumValN(StateTerminationType::ReadOnly, "ReadOnly", "Write to read-only memory"),
         clEnumValN(StateTerminationType::ReportError, "ReportError",
                    "klee_report_error called"),
         clEnumValN(StateTerminationType::User, "User", "Wrong klee_* functions invocation") KLEE_LLVM_CL_VAL_END),
     cl::ZeroOrMore,
+    cl::CommaSeparated,
     cl::cat(TerminationCat));
 
 cl::opt<unsigned long long> MaxInstructions(
@@ -3555,13 +3558,18 @@ std::string Executor::getAddressInfo(ExecutionState &state,
 }
 
 
-void Executor::terminateState(ExecutionState &state) {
+void Executor::terminateState(ExecutionState &state, StateTerminationType terminationType) {
   if (replayKTest && replayPosition!=replayKTest->numObjects) {
     klee_warning_once(replayKTest,
                       "replay did not consume all objects in test input.");
   }
 
+  // update stats
   interpreterHandler->incPathsExplored();
+
+  // exit on termination type
+  if (ExitOnErrorType.isSet(terminationType))
+    haltExecution = true;
 
   // add state to removedStates for next searcher update
   auto it = std::find(addedStates.begin(), addedStates.end(), &state);
@@ -3596,7 +3604,7 @@ bool shouldWriteTest(const ExecutionState &state, StateTerminationClass terminat
 void Executor::terminateStateOnExit(ExecutionState &state) {
   if (shouldWriteTest(state, StateTerminationClass::Exit) || (AlwaysOutputSeeds && seedMap.count(&state)))
     interpreterHandler->processTestCase(state, nullptr, stateTerminationTypeSuffix[(std::uint32_t)StateTerminationType::Exit]);
-  terminateState(state);
+  terminateState(state, StateTerminationType::Exit);
 }
 
 void Executor::terminateStateEarly(ExecutionState &state, const Twine &message,
@@ -3657,11 +3665,6 @@ const InstructionInfo & Executor::getLastNonKleeInternalInstruction(const Execut
   return *ii;
 }
 
-bool shouldExitOn(StateTerminationType reason) {
-  auto it = std::find(ExitOnErrorType.begin(), ExitOnErrorType.end(), reason);
-  return it != ExitOnErrorType.end();
-}
-
 void Executor::terminateStateOnError(ExecutionState &state,
                                      const llvm::Twine &messaget,
                                      StateTerminationType terminationType,
@@ -3705,10 +3708,7 @@ void Executor::terminateStateOnError(ExecutionState &state,
     }
   }
 
-  terminateState(state);
-
-  if (shouldExitOn(terminationType))
-    haltExecution = true;
+  terminateState(state, terminationType);
 }
 
 void Executor::terminateStateOnExecError(ExecutionState &state,
