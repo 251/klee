@@ -435,6 +435,12 @@ cl::opt<bool> DebugCheckForImpliedValues(
     cl::desc("Debug the implied value optimization"),
     cl::cat(DebugCat));
 
+/*** Misc ***/
+
+cl::opt<bool> WritePTree(
+    "write-ptree", cl::init(false),
+    cl::desc("Write process tree into ptree.db"),
+    cl::cat(MiscCat));
 } // namespace
 
 // XXX hack
@@ -3399,11 +3405,13 @@ bool Executor::checkMemoryUsage() {
 }
 
 void Executor::doDumpStates() {
-  if (!WriteTests.isSet(StateTerminationClass::Early) || states.empty()) {
+  // we can short-circuit shutdown when no tests for early-terminated are
+  // requested and the process tree is not written to disk
+  if (!WritePTree &&
+      (!WriteTests.isSet(StateTerminationClass::Early) || states.empty())) {
     // add remaining states to stats
     stats::termEarly += states.size();
     interpreterHandler->incPathsExplored(states.size());
-    return;
   }
 
   klee_message("halting execution, dumping remaining states");
@@ -4393,8 +4401,11 @@ void Executor::runFunctionAsMain(Function *f,
   
   initializeGlobals(*state);
 
-  if (userSearcherRequiresPTree()) {
-    processTree = std::make_unique<PTree>(state);
+  if (WritePTree || userSearcherRequiresPTree()) {
+    std::string dbPath;
+    if (WritePTree)
+      dbPath = interpreterHandler->getOutputFilename("ptree.db");
+    processTree = std::make_unique<PTree>(state, dbPath);
   }
   run(*state);
   processTree = nullptr;

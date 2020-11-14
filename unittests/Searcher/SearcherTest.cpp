@@ -25,7 +25,7 @@ namespace {
 TEST(SearcherTest, RandomPath) {
   // First state
   ExecutionState es;
-  PTree processTree(&es);
+  PTree processTree(&es, "");
   es.ptreeNode = processTree.root.getPointer();
 
   RNG rng;
@@ -65,7 +65,7 @@ TEST(SearcherTest, RandomPath) {
 TEST(SearcherTest, TwoRandomPath) {
   // Root state
   ExecutionState root;
-  PTree processTree(&root);
+  PTree processTree(&root, "");
   root.ptreeNode = processTree.root.getPointer();
 
   ExecutionState es(root);
@@ -123,7 +123,7 @@ TEST(SearcherTest, TwoRandomPathDot) {
 
   // Root state
   ExecutionState root;
-  PTree processTree(&root);
+  PTree processTree(&root, "");
   root.ptreeNode = processTree.root.getPointer();
   rootPNode = root.ptreeNode;
 
@@ -206,7 +206,7 @@ TEST(SearcherTest, TwoRandomPathDot) {
 TEST(SearcherDeathTest, TooManyRandomPaths) {
   // First state
   ExecutionState es;
-  PTree processTree(&es);
+  PTree processTree(&es, "");
   es.ptreeNode = processTree.root.getPointer();
   processTree.remove(es.ptreeNode); // Need to remove to avoid leaks
 
@@ -219,30 +219,29 @@ TEST(SearcherDeathTest, TooManyRandomPaths) {
 
 TEST(TreeTest, TerminationMask) {
   // test termination mask values and PTreeNode IDs
-  ExecutionState es1; /*       o switch     */
-  ExecutionState es2; /*      / \           */
-  ExecutionState es3; /* Ptr 2   o br       */
-  PTree ptree(&es1);  /*        / \         */
-                      /*  Exit 3   1 Solver */
+  ExecutionState es1;     /*       o switch     */
+  ExecutionState es2;     /*      / \           */
+  ExecutionState es3;     /* Ptr 2   o br       */
+  PTree ptree(&es1, "");  /*        / \         */
+                          /*  Exit 3   1 Solver */
 
-  EXPECT_EQ(es1.ptreeNode->id, 1);
+  EXPECT_EQ(es1.ptreeNode->id, 1U);
 
   // build tree
   const auto node0 = es1.ptreeNode;
   ptree.attach(es1.ptreeNode, &es2, &es1, BranchType::Switch);
   EXPECT_EQ(node0->branchType, BranchType::Switch);
 
-  EXPECT_EQ(es2.ptreeNode->id, 2);
-  EXPECT_EQ(es1.ptreeNode->id, 3);
+  EXPECT_EQ(es2.ptreeNode->id, 2U);
+  EXPECT_EQ(es1.ptreeNode->id, 3U);
 
   const auto node1 = es1.ptreeNode;
   ptree.attach(es1.ptreeNode, &es3, &es1, BranchType::Br);
   EXPECT_EQ(node1->branchType, BranchType::Br);
-  EXPECT_EQ(node1->id, 3);
-  EXPECT_EQ(node1->id, 3);
+  EXPECT_EQ(node1->id, 3U);
 
-  EXPECT_EQ(es3.ptreeNode->id, 4);
-  EXPECT_EQ(es1.ptreeNode->id, 5);
+  EXPECT_EQ(es3.ptreeNode->id, 4U);
+  EXPECT_EQ(es1.ptreeNode->id, 5U);
 
   // "terminate"
   es1.ptreeNode->terminationTypeMask = (std::uint32_t)StateTerminationType::Solver;

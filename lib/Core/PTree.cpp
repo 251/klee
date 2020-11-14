@@ -10,6 +10,7 @@
 #include "PTree.h"
 
 #include "ExecutionState.h"
+#include "PTreeWriter.h"
 #include "klee/Expr/ExprPPrinter.h"
 #include "klee/Module/KInstruction.h"
 #include "klee/Support/OptionCategories.h"
@@ -30,9 +31,11 @@ cl::opt<bool>
 
 } // namespace
 
-PTree::PTree(ExecutionState *initialState)
+PTree::PTree(ExecutionState *initialState, const std::string &dbPath)
     : root(PTreeNodePtr(new PTreeNode(nullptr, initialState, nextID++))) {
   initialState->ptreeNode = root.getPointer();
+  if (!dbPath.empty())
+    writer = std::make_unique<PTreeWriter>(dbPath);
 }
 
 void PTree::attach(PTreeNode *node, ExecutionState *leftState, ExecutionState *rightState, BranchType reason) {
@@ -41,7 +44,6 @@ void PTree::attach(PTreeNode *node, ExecutionState *leftState, ExecutionState *r
          "Attach assumes the right state is the current state");
   // (re)set node data
   node->asmLine = node->state->prevPC && node->state->prevPC->info ? node->state->prevPC->info->assemblyLine : 0;
-  node->state = nullptr;
   node->branchType = reason;
   // attach children
   node->left = PTreeNodePtr(new PTreeNode(node, leftState, nextID++));
@@ -52,15 +54,28 @@ void PTree::attach(PTreeNode *node, ExecutionState *leftState, ExecutionState *r
                          ? node->parent->left.getInt()
                          : node->parent->right.getInt();
   node->right = PTreeNodePtr(new PTreeNode(node, rightState, nextID++), currentNodeTag);
+  // write branched node
+  if (writer)
+    writer->write(*node);
+  node->state = nullptr;
 }
 
 void PTree::remove(PTreeNode *n) {
   assert(!n->left.getPointer() && !n->right.getPointer());
+
+  // update termination location in leaf nodes
+  if (n->state)
+    n->asmLine = n->state->prevPC && n->state->prevPC->info ? n->state->prevPC->info->assemblyLine : 0;
+
   do {
     PTreeNode *p = n->parent;
     if (p) {
       // update termination type mask
+      const auto ttm = p->terminationTypeMask;
       p->terminationTypeMask |= n->terminationTypeMask;
+      if (ttm != p->terminationTypeMask)
+        p->mode |= static_cast<uint8_t>(PTreeNodeMode::NeedsUpdate);
+
       // remove node from parent
       if (n == p->left.getPointer()) {
         p->left = PTreeNodePtr(nullptr);
@@ -69,6 +84,17 @@ void PTree::remove(PTreeNode *n) {
         p->right = PTreeNodePtr(nullptr);
       }
     }
+
+    // write leaf node or update modified intermediate node
+    if (writer) {
+      if (n->state) {
+        writer->write(*n);
+      } else {
+        if (n->mode & static_cast<std::uint8_t>(PTreeNodeMode::NeedsUpdate))
+          writer->update(*n);
+      }
+    }
+
     delete n;
     n = p;
   } while (n && !n->left.getPointer() && !n->right.getPointer());
@@ -135,7 +161,16 @@ void PTree::dump(llvm::raw_ostream &os) const {
   delete pp;
 }
 
-PTreeNode::PTreeNode(PTreeNode *parent, ExecutionState *state, std::int64_t id)
+std::uint8_t PTree::getNextId() {
+  std::uint8_t id = 1U << registeredIds++;
+  if (registeredIds > PtrBitCount) {
+    klee_error("PTree cannot support more than %d RandomPathSearchers",
+               PtrBitCount);
+  }
+  return id;
+}
+
+PTreeNode::PTreeNode(PTreeNode *parent, ExecutionState *state, std::uint64_t id)
     : parent{parent}, left{PTreeNodePtr(nullptr)}, right{PTreeNodePtr(nullptr)}, state{state}, id{id} {
   state->ptreeNode = this;
 }

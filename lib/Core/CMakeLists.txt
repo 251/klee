@@ -20,6 +20,7 @@ klee_add_component(kleeCore
   Memory.cpp
   MemoryManager.cpp
   PTree.cpp
+  PTreeWriter.cpp
   Searcher.cpp
   SeedInfo.cpp
   SpecialFunctionHandler.cpp
