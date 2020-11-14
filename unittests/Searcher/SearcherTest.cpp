@@ -218,20 +218,31 @@ TEST(SearcherDeathTest, TooManyRandomPaths) {
 }
 
 TEST(TreeTest, TerminationMask) {
+  // test termination mask values and PTreeNode IDs
   ExecutionState es1; /*       o switch     */
   ExecutionState es2; /*      / \           */
   ExecutionState es3; /* Ptr 2   o br       */
   PTree ptree(&es1);  /*        / \         */
                       /*  Exit 3   1 Solver */
 
+  EXPECT_EQ(es1.ptreeNode->id, 1);
+
   // build tree
   const auto node0 = es1.ptreeNode;
   ptree.attach(es1.ptreeNode, &es2, &es1, BranchType::Switch);
   EXPECT_EQ(node0->branchType, BranchType::Switch);
 
+  EXPECT_EQ(es2.ptreeNode->id, 2);
+  EXPECT_EQ(es1.ptreeNode->id, 3);
+
   const auto node1 = es1.ptreeNode;
   ptree.attach(es1.ptreeNode, &es3, &es1, BranchType::Br);
   EXPECT_EQ(node1->branchType, BranchType::Br);
+  EXPECT_EQ(node1->id, 3);
+  EXPECT_EQ(node1->id, 3);
+
+  EXPECT_EQ(es3.ptreeNode->id, 4);
+  EXPECT_EQ(es1.ptreeNode->id, 5);
 
   // "terminate"
   es1.ptreeNode->terminationTypeMask = (std::uint32_t)StateTerminationType::Solver;

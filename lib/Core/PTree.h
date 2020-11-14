@@ -34,18 +34,21 @@ namespace klee {
     PTreeNodePtr left;
     PTreeNodePtr right;
     ExecutionState *state {nullptr};
+    std::int64_t id {0};
     std::uint32_t terminationTypeMask {0};
     std::uint32_t asmLine {0};
     BranchType branchType {BranchType::UNKNOWN};
 
     PTreeNode(const PTreeNode&) = delete;
-    PTreeNode(PTreeNode *parent, ExecutionState *state);
+    PTreeNode(PTreeNode *parent, ExecutionState *state, std::int64_t id);
     ~PTreeNode() = default;
   };
 
   class PTree {
-    // Number of registered ID
-    std::uint8_t registeredIds = 0;
+    /// Unique ID for next new child node
+    std::int64_t nextID {1};
+    /// Number of registered user IDs
+    std::uint8_t registeredIds {0};
 
   public:
     PTreeNodePtr root;
@@ -53,7 +56,7 @@ namespace klee {
     ~PTree() = default;
 
     void attach(PTreeNode *node, ExecutionState *leftState,
-                ExecutionState *rightState, BranchType reason) const;
+                ExecutionState *rightState, BranchType reason);
     void remove(PTreeNode *node);
     void dump(llvm::raw_ostream &os) const;
     std::uint8_t getNextId() {

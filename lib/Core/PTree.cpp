@@ -31,11 +31,11 @@ cl::opt<bool>
 } // namespace
 
 PTree::PTree(ExecutionState *initialState)
-    : root(PTreeNodePtr(new PTreeNode(nullptr, initialState))) {
+    : root(PTreeNodePtr(new PTreeNode(nullptr, initialState, nextID++))) {
   initialState->ptreeNode = root.getPointer();
 }
 
-void PTree::attach(PTreeNode *node, ExecutionState *leftState, ExecutionState *rightState, BranchType reason) const {
+void PTree::attach(PTreeNode *node, ExecutionState *leftState, ExecutionState *rightState, BranchType reason) {
   assert(node && !node->left.getPointer() && !node->right.getPointer());
   assert(node == rightState->ptreeNode &&
          "Attach assumes the right state is the current state");
@@ -44,14 +44,14 @@ void PTree::attach(PTreeNode *node, ExecutionState *leftState, ExecutionState *r
   node->state = nullptr;
   node->branchType = reason;
   // attach children
-  node->left = PTreeNodePtr(new PTreeNode(node, leftState));
+  node->left = PTreeNodePtr(new PTreeNode(node, leftState, nextID++));
   // The current node inherits the tag
   uint8_t currentNodeTag = root.getInt();
   if (node->parent)
     currentNodeTag = node->parent->left.getPointer() == node
                          ? node->parent->left.getInt()
                          : node->parent->right.getInt();
-  node->right = PTreeNodePtr(new PTreeNode(node, rightState), currentNodeTag);
+  node->right = PTreeNodePtr(new PTreeNode(node, rightState, nextID++), currentNodeTag);
 }
 
 void PTree::remove(PTreeNode *n) {
@@ -135,7 +135,7 @@ void PTree::dump(llvm::raw_ostream &os) const {
   delete pp;
 }
 
-PTreeNode::PTreeNode(PTreeNode *parent, ExecutionState *state)
-    : parent{parent}, left{PTreeNodePtr(nullptr)}, right{PTreeNodePtr(nullptr)}, state{state} {
+PTreeNode::PTreeNode(PTreeNode *parent, ExecutionState *state, std::int64_t id)
+    : parent{parent}, left{PTreeNodePtr(nullptr)}, right{PTreeNodePtr(nullptr)}, state{state}, id{id} {
   state->ptreeNode = this;
 }
