@@ -10,9 +10,8 @@
 #include "PTree.h"
 
 #include "ExecutionState.h"
-
-#include "klee/Expr/Expr.h"
 #include "klee/Expr/ExprPPrinter.h"
+#include "klee/Module/KInstruction.h"
 #include "klee/Support/OptionCategories.h"
 
 #include <bitset>
@@ -36,11 +35,15 @@ PTree::PTree(ExecutionState *initialState)
   initialState->ptreeNode = root.getPointer();
 }
 
-void PTree::attach(PTreeNode *node, ExecutionState *leftState, ExecutionState *rightState) {
+void PTree::attach(PTreeNode *node, ExecutionState *leftState, ExecutionState *rightState, BranchType reason) const {
   assert(node && !node->left.getPointer() && !node->right.getPointer());
   assert(node == rightState->ptreeNode &&
          "Attach assumes the right state is the current state");
+  // (re)set node data
+  node->asmLine = node->state->prevPC && node->state->prevPC->info ? node->state->prevPC->info->assemblyLine : 0;
   node->state = nullptr;
+  node->branchType = reason;
+  // attach children
   node->left = PTreeNodePtr(new PTreeNode(node, leftState));
   // The current node inherits the tag
   uint8_t currentNodeTag = root.getInt();
@@ -56,6 +59,9 @@ void PTree::remove(PTreeNode *n) {
   do {
     PTreeNode *p = n->parent;
     if (p) {
+      // update termination type mask
+      p->terminationTypeMask |= n->terminationTypeMask;
+      // remove node from parent
       if (n == p->left.getPointer()) {
         p->left = PTreeNodePtr(nullptr);
       } else {
@@ -67,6 +73,8 @@ void PTree::remove(PTreeNode *n) {
     n = p;
   } while (n && !n->left.getPointer() && !n->right.getPointer());
 
+  // NOTE: (currently) incompatible with persistent tree: do not update
+  // termination mask and branch type
   if (n && CompressProcessTree) {
     // We're now at a node that has exactly one child; we've just deleted the
     // other one. Eliminate the node and connect its child to the parent
@@ -91,7 +99,7 @@ void PTree::remove(PTreeNode *n) {
   }
 }
 
-void PTree::dump(llvm::raw_ostream &os) {
+void PTree::dump(llvm::raw_ostream &os) const {
   ExprPPrinter *pp = ExprPPrinter::create(os);
   pp->setNewline("\\l");
   os << "digraph G {\n";
@@ -127,8 +135,7 @@ void PTree::dump(llvm::raw_ostream &os) {
   delete pp;
 }
 
-PTreeNode::PTreeNode(PTreeNode *parent, ExecutionState *state) : parent{parent}, state{state} {
+PTreeNode::PTreeNode(PTreeNode *parent, ExecutionState *state)
+    : parent{parent}, left{PTreeNodePtr(nullptr)}, right{PTreeNodePtr(nullptr)}, state{state} {
   state->ptreeNode = this;
-  left = PTreeNodePtr(nullptr);
-  right = PTreeNodePtr(nullptr);
 }

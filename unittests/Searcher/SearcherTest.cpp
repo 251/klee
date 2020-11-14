@@ -11,6 +11,7 @@
 #include "gtest/gtest.h"
 
 #include "klee/ADT/RNG.h"
+#include "klee/Core/TerminationTypes.h"
 #include "Core/ExecutionState.h"
 #include "Core/PTree.h"
 #include "Core/Searcher.h"
@@ -37,7 +38,7 @@ TEST(SearcherTest, RandomPath) {
 
   // Two states
   ExecutionState es1(es);
-  processTree.attach(es.ptreeNode, &es1, &es);
+  processTree.attach(es.ptreeNode, &es1, &es, BranchType::UNKNOWN);
   rp.update(&es, {&es1}, {});
 
   // Random path seed dependant
@@ -68,7 +69,7 @@ TEST(SearcherTest, TwoRandomPath) {
   root.ptreeNode = processTree.root.getPointer();
 
   ExecutionState es(root);
-  processTree.attach(root.ptreeNode, &es, &root);
+  processTree.attach(root.ptreeNode, &es, &root, BranchType::UNKNOWN);
 
   RNG rng, rng1;
   RandomPathSearcher rp(processTree, rng);
@@ -83,7 +84,7 @@ TEST(SearcherTest, TwoRandomPath) {
 
   // Two states
   ExecutionState es1(es);
-  processTree.attach(es.ptreeNode, &es1, &es);
+  processTree.attach(es.ptreeNode, &es1, &es, BranchType::UNKNOWN);
 
   rp.update(&es, {}, {});
   rp1.update(nullptr, {&es1}, {});
@@ -127,7 +128,7 @@ TEST(SearcherTest, TwoRandomPathDot) {
   rootPNode = root.ptreeNode;
 
   ExecutionState es(root);
-  processTree.attach(root.ptreeNode, &es, &root);
+  processTree.attach(root.ptreeNode, &es, &root, BranchType::UNKNOWN);
   rightLeafPNode = root.ptreeNode;
   esParentPNode = es.ptreeNode;
 
@@ -138,7 +139,7 @@ TEST(SearcherTest, TwoRandomPathDot) {
   rp.update(nullptr, {&es}, {});
 
   ExecutionState es1(es);
-  processTree.attach(es.ptreeNode, &es1, &es);
+  processTree.attach(es.ptreeNode, &es1, &es, BranchType::UNKNOWN);
   esLeafPNode = es.ptreeNode;
   es1LeafPNode = es1.ptreeNode;
 
@@ -201,6 +202,7 @@ TEST(SearcherTest, TwoRandomPathDot) {
   processTree.remove(es1.ptreeNode);
   processTree.remove(root.ptreeNode);
 }
+
 TEST(SearcherDeathTest, TooManyRandomPaths) {
   // First state
   ExecutionState es;
@@ -213,5 +215,36 @@ TEST(SearcherDeathTest, TooManyRandomPaths) {
   RandomPathSearcher rp1(processTree, rng);
   RandomPathSearcher rp2(processTree, rng);
   ASSERT_DEATH({ RandomPathSearcher rp3(processTree, rng); }, "");
+}
+
+TEST(TreeTest, TerminationMask) {
+  ExecutionState es1; /*       o switch     */
+  ExecutionState es2; /*      / \           */
+  ExecutionState es3; /* Ptr 2   o br       */
+  PTree ptree(&es1);  /*        / \         */
+                      /*  Exit 3   1 Solver */
+
+  // build tree
+  const auto node0 = es1.ptreeNode;
+  ptree.attach(es1.ptreeNode, &es2, &es1, BranchType::Switch);
+  EXPECT_EQ(node0->branchType, BranchType::Switch);
+
+  const auto node1 = es1.ptreeNode;
+  ptree.attach(es1.ptreeNode, &es3, &es1, BranchType::Br);
+  EXPECT_EQ(node1->branchType, BranchType::Br);
+
+  // "terminate"
+  es1.ptreeNode->terminationTypeMask = (std::uint32_t)StateTerminationType::Solver;
+  es2.ptreeNode->terminationTypeMask = (std::uint32_t)StateTerminationType::Ptr;
+  es3.ptreeNode->terminationTypeMask = (std::uint32_t)StateTerminationType::Exit;
+
+  // remove nodes
+  ptree.remove(es3.ptreeNode);
+  EXPECT_EQ(node1->terminationTypeMask, (std::uint32_t)StateTerminationType::Exit);
+  ptree.remove(es1.ptreeNode);
+  EXPECT_EQ(ptree.root.getPointer()->terminationTypeMask,
+            (std::uint32_t)StateTerminationType::Exit | (std::uint32_t)StateTerminationType::Solver);
+
+  ptree.remove(es2.ptreeNode);
 }
 }

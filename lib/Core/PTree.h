@@ -10,8 +10,11 @@
 #ifndef KLEE_PTREE_H
 #define KLEE_PTREE_H
 
+#include "ExecutionState.h"
+#include "klee/Core/BranchTypes.h"
 #include "klee/Expr/Expr.h"
 #include "klee/Support/ErrorHandling.h"
+
 #include "llvm/ADT/PointerIntPair.h"
 
 namespace klee {
@@ -27,11 +30,13 @@ namespace klee {
 
   class PTreeNode {
   public:
-    PTreeNode *parent = nullptr;
-
-    PTreeNodePtr left; 
+    PTreeNode *parent {nullptr};
+    PTreeNodePtr left;
     PTreeNodePtr right;
-    ExecutionState *state = nullptr;
+    ExecutionState *state {nullptr};
+    std::uint32_t terminationTypeMask {0};
+    std::uint32_t asmLine {0};
+    BranchType branchType {BranchType::UNKNOWN};
 
     PTreeNode(const PTreeNode&) = delete;
     PTreeNode(PTreeNode *parent, ExecutionState *state);
@@ -40,7 +45,7 @@ namespace klee {
 
   class PTree {
     // Number of registered ID
-    int registeredIds = 0;
+    std::uint8_t registeredIds = 0;
 
   public:
     PTreeNodePtr root;
@@ -48,11 +53,11 @@ namespace klee {
     ~PTree() = default;
 
     void attach(PTreeNode *node, ExecutionState *leftState,
-                ExecutionState *rightState);
+                ExecutionState *rightState, BranchType reason) const;
     void remove(PTreeNode *node);
-    void dump(llvm::raw_ostream &os);
+    void dump(llvm::raw_ostream &os) const;
     std::uint8_t getNextId() {
-      std::uint8_t id = 1 << registeredIds++;
+      std::uint8_t id = 1U << registeredIds++;
       if (registeredIds > PtrBitCount) {
         klee_error("PTree cannot support more than %d RandomPathSearchers",
                    PtrBitCount);
