@@ -17,6 +17,8 @@ namespace klee {
   // XXX gross, should be on demand?
   bool userSearcherRequiresMD2U();
 
+  bool userSearcherRequiresPTree();
+
   void initializeSearchOptions();
 
   Searcher *constructUserSearcher(Executor &executor);

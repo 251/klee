@@ -103,6 +103,9 @@ bool klee::userSearcherRequiresMD2U() {
           std::find(CoreSearch.begin(), CoreSearch.end(), Searcher::NURS_QC) != CoreSearch.end());
 }
 
+bool klee::userSearcherRequiresPTree() {
+  return std::find(CoreSearch.begin(), CoreSearch.end(), Searcher::RandomPath) != CoreSearch.end();
+}
 
 Searcher *getNewSearcher(Searcher::CoreSearchType type, RNG &rng, PTree &processTree) {
   Searcher *searcher = nullptr;

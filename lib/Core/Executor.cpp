@@ -916,7 +916,8 @@ void Executor::branch(ExecutionState &state,
       ExecutionState *ns = es->branch();
       addedStates.push_back(ns);
       result.push_back(ns);
-      processTree->attach(es->ptreeNode, ns, es, reason);
+      if (processTree)
+        processTree->attach(es->ptreeNode, ns, es, reason);
     }
   }
 
@@ -1155,7 +1156,8 @@ Executor::fork(ExecutionState &current, ref<Expr> condition, bool isInternal, Br
       }
     }
 
-    processTree->attach(current.ptreeNode, falseState, trueState, reason);
+    if (processTree)
+      processTree->attach(current.ptreeNode, falseState, trueState, reason);
 
     if (pathWriter) {
       // Need to update the pathOS.id field of falseState, otherwise the same id
@@ -3270,7 +3272,8 @@ void Executor::updateStates(ExecutionState *current) {
       seedMap.find(es);
     if (it3 != seedMap.end())
       seedMap.erase(it3);
-    processTree->remove(es->ptreeNode);
+    if (processTree)
+      processTree->remove(es->ptreeNode);
     delete es;
   }
   removedStates.clear();
@@ -3571,7 +3574,8 @@ void Executor::terminateState(ExecutionState &state, StateTerminationType termin
 
   // update stats
   interpreterHandler->incPathsExplored();
-  state.ptreeNode->terminationTypeMask |= 1U << static_cast<std::uint32_t>(terminationType);
+  if (processTree)
+    state.ptreeNode->terminationTypeMask |= 1U << static_cast<std::uint32_t>(terminationType);
 
   // exit on termination type
   if (ExitOnErrorType.isSet(terminationType))
@@ -3589,7 +3593,8 @@ void Executor::terminateState(ExecutionState &state, StateTerminationType termin
   if (it2 != seedMap.end())
     seedMap.erase(it2);
   addedStates.erase(it);
-  processTree->remove(state.ptreeNode);
+  if (processTree)
+    processTree->remove(state.ptreeNode);
   delete &state;
 }
 
@@ -4388,7 +4393,9 @@ void Executor::runFunctionAsMain(Function *f,
   
   initializeGlobals(*state);
 
-  processTree = std::make_unique<PTree>(state);
+  if (userSearcherRequiresPTree()) {
+    processTree = std::make_unique<PTree>(state);
+  }
   run(*state);
   processTree = nullptr;
 
@@ -4639,7 +4646,7 @@ int *Executor::getErrnoLocation(const ExecutionState &state) const {
 
 
 void Executor::dumpPTree() {
-  if (!::dumpPTree) return;
+  if (!::dumpPTree || !processTree) return;
 
   char name[32];
   snprintf(name, sizeof(name),"ptree%08d.dot", (int) stats::instructions);
