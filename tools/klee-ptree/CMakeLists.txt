@@ -6,12 +6,9 @@
 # License. See LICENSE.TXT for details.
 #
 #===------------------------------------------------------------------------===#
-add_subdirectory(gen-bout)
-add_subdirectory(gen-random-bout)
-add_subdirectory(kleaver)
-add_subdirectory(klee)
-add_subdirectory(klee-ptree)
-add_subdirectory(klee-replay)
-add_subdirectory(klee-stats)
-add_subdirectory(klee-zesti)
-add_subdirectory(ktest-tool)
+
+add_executable(klee-ptree main.cpp Tree.cpp Info.cpp Dot.cpp)
+
+target_link_libraries(klee-ptree PUBLIC ${SQLITE3_LIBRARIES})
+
+install(TARGETS klee-ptree DESTINATION bin)
