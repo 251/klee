@@ -406,6 +406,52 @@ ssize_t read(int fd, void *buf, size_t count) {
   }
 }
 
+ssize_t pread(int fd, void *buf, size_t nbyte, off_t offset) {
+  if (offset < 0) {
+    errno = EINVAL;
+    return -1;
+  }
+
+  if (buf == NULL) {
+    errno = EFAULT;
+    return -1;
+  }
+
+  exe_file_t *f = __get_file(fd);
+
+  if (!f) {
+    errno = EBADF;
+    return -1;
+  }
+
+  if (nbyte == 0)
+    return 0;
+
+  if (!f->dfile) {
+    /* concrete file */
+    buf = __concretize_ptr(buf);
+    nbyte = __concretize_size(nbyte);
+    offset = __concretize_size(offset);
+    klee_check_memory_access(buf, offset + nbyte);
+
+    int r = syscall(__NR_pread64, f->fd, buf, nbyte, offset);
+    return r;
+  }
+  else {
+    /* symbolic file */
+    if (offset + nbyte > f->dfile->size) {
+      nbyte = f->dfile->size - offset;
+    }
+
+    memcpy(buf, f->dfile->contents + offset, nbyte);
+    return nbyte;
+  }
+}
+
+ssize_t pread64(int fd, void *buf, size_t nbyte, off_t offset) {
+  return pread(fd, buf, nbyte, offset);
+}
+
 
 ssize_t write(int fd, const void *buf, size_t count) {
   static int n_calls = 0;
