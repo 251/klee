@@ -192,8 +192,7 @@ cl::opt<ExternalCallPolicy> ExternalCalls(
                    "allowed (default)"),
         clEnumValN(ExternalCallPolicy::All, "all",
                    "All external function calls are allowed.  This concretizes "
-                   "any symbolic arguments in calls to external functions.")
-            KLEE_LLVM_CL_VAL_END),
+                   "any symbolic arguments in calls to external functions.")),
     cl::init(ExternalCallPolicy::Concrete),
     cl::cat(ExtCallsCat));
 
@@ -295,7 +294,7 @@ cl::list<Executor::TerminateReason> ExitOnErrorType(
                    "An unexpected exception was thrown"),
 #endif
         clEnumValN(Executor::Unhandled, "Unhandled",
-                   "Unhandled instruction hit") KLEE_LLVM_CL_VAL_END),
+                   "Unhandled instruction hit")),
     cl::ZeroOrMore,
     cl::cat(TerminationCat));
 
@@ -413,7 +412,7 @@ llvm::cl::bits<PrintDebugInstructionsType> DebugPrintInstructions(
                    "inst_id]"),
         clEnumValN(FILE_COMPACT, "compact:file",
                    "Log all instructions to file instructions.txt in format "
-                   "[inst_id]") KLEE_LLVM_CL_VAL_END),
+                   "[inst_id]")),
     llvm::cl::CommaSeparated,
     cl::cat(DebugCat));
 
