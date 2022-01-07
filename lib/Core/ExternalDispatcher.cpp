@@ -8,6 +8,8 @@
 //===----------------------------------------------------------------------===//
 
 #include "ExternalDispatcher.h"
+
+#include "CoreStats.h"
 #include "klee/Config/Version.h"
 
 #if LLVM_VERSION_CODE < LLVM_VERSION(8, 0)
@@ -158,6 +160,7 @@ ExternalDispatcherImpl::~ExternalDispatcherImpl() {
 
 bool ExternalDispatcherImpl::executeCall(Function *f, Instruction *i,
                                          uint64_t *args) {
+  ++stats::externalCalls;
   dispatchers_ty::iterator it = dispatchers.find(i);
   if (it != dispatchers.end()) {
     // Code already JIT'ed for this
