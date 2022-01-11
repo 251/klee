@@ -12,6 +12,7 @@
 #include "ExecutionState.h"
 
 #include "klee/Config/Version.h"
+#include "klee/Core/TerminationTypes.h"
 #include "klee/Module/InstructionInfoTable.h"
 #include "klee/Module/KInstruction.h"
 #include "klee/Module/KModule.h"
@@ -441,6 +442,8 @@ void StatsTracker::markBranchVisited(ExecutionState *visitedTrue,
 void StatsTracker::writeStatsHeader() {
   #undef BTYPE
   #define BTYPE(Name,I) << "Branches" #Name " INTEGER,"
+  #undef TCLASS
+  #define TCLASS(Name,I) << "Termination" #Name " INTEGER,"
   std::ostringstream create, insert;
   create << "CREATE TABLE stats ("
          << "Instructions INTEGER,"
@@ -470,6 +473,7 @@ void StatsTracker::writeStatsHeader() {
          << "Allocations INTEGER,"
          << "States INTEGER,"
          BRANCH_TYPES
+         TERMINATION_CLASSES
          << "ArrayHashTime INTEGER"
          << ')';
   char *zErrMsg = nullptr;
@@ -485,6 +489,8 @@ void StatsTracker::writeStatsHeader() {
    */
   #undef BTYPE
   #define BTYPE(Name, I) << "Branches" #Name ","
+  #undef TCLASS
+  #define TCLASS(Name, I) << "Termination" #Name ","
   insert << "INSERT OR FAIL INTO stats ("
          << "Instructions,"
          << "FullBranches,"
@@ -513,10 +519,13 @@ void StatsTracker::writeStatsHeader() {
          << "Allocations,"
          << "States,"
          BRANCH_TYPES
+         TERMINATION_CLASSES
          << "ArrayHashTime"
          << ')';
   #undef BTYPE
   #define BTYPE(Name, I) << "?,"
+  #undef TCLASS
+  #define TCLASS(Name, I) << "?,"
   insert << " VALUES ("
          << "?,"
          << "?,"
@@ -545,6 +554,7 @@ void StatsTracker::writeStatsHeader() {
          << "?,"
          << "?,"
          BRANCH_TYPES
+         TERMINATION_CLASSES
          << "? "
          << ')';
 
@@ -560,6 +570,8 @@ time::Span StatsTracker::elapsed() {
 void StatsTracker::writeStatsLine() {
   #undef BTYPE
   #define BTYPE(Name,I) sqlite3_bind_int64(insertStmt, arg++, stats::branches ## Name);
+  #undef TCLASS
+  #define TCLASS(Name,I) sqlite3_bind_int64(insertStmt, arg++, stats::termination ## Name);
   int arg = 1;
   sqlite3_bind_int64(insertStmt, arg++, stats::instructions);
   sqlite3_bind_int64(insertStmt, arg++, fullBranches);
@@ -588,6 +600,7 @@ void StatsTracker::writeStatsLine() {
   sqlite3_bind_int64(insertStmt, arg++, stats::allocations);
   sqlite3_bind_int64(insertStmt, arg++, ExecutionState::getLastID());
   BRANCH_TYPES
+  TERMINATION_CLASSES
 #ifdef KLEE_ARRAY_DEBUG
   sqlite3_bind_int64(insertStmt, arg++, stats::arrayHashTime);
 #else
