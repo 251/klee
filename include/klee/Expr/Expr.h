@@ -1167,6 +1167,8 @@ inline bool Expr::isFalse() const {
   return false;
 }
 
+void dumpExprStats();
+
 } // End klee namespace
 
 #endif /* KLEE_EXPR_H */

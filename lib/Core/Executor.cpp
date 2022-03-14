@@ -3605,6 +3605,7 @@ void Executor::run(ExecutionState &initialState) {
   searcher = nullptr;
 
   doDumpStates();
+  dumpExprStats();
 }
 
 std::string Executor::getAddressInfo(ExecutionState &state, 

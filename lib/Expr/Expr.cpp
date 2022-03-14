@@ -40,6 +40,12 @@ cl::opt<bool> ConstArrayOpt(
     cl::desc(
         "Enable an optimization involving all-constant arrays (default=false)"),
     cl::cat(klee::ExprCat));
+
+static u_int64_t statsCmp {0};
+static u_int64_t statsCmpBefHash {0};
+static u_int64_t statsCmpBefContents {0};
+static u_int64_t statsCmpBefKids {0};
+static u_int64_t statsCmpEquiv {0};
 }
 
 /***/
@@ -93,6 +99,7 @@ ref<Expr> Expr::createTempRead(const Array *array, Expr::Width w) {
 }
 
 int Expr::compare(const Expr &b) const {
+  ++statsCmp;
   static ExprEquivSet equivs;
   int r = compare(b, equivs);
   equivs.clear();
@@ -117,17 +124,24 @@ int Expr::compare(const Expr &b, ExprEquivSet &equivs) const {
   if (ak!=bk)
     return (ak < bk) ? -1 : 1;
 
+  ++statsCmpBefHash;
   if (hashValue != b.hashValue) 
     return (hashValue < b.hashValue) ? -1 : 1;
 
-  if (int res = compareContents(b)) 
+  // screw it
+  // return 0; -- fails sometimes (hash collisions)
+
+  ++statsCmpBefContents;
+  if (int res = compareContents(b))
     return res;
 
+  ++statsCmpBefKids;
   unsigned aN = getNumKids();
   for (unsigned i=0; i<aN; i++)
     if (int res = getKid(i)->compare(*b.getKid(i), equivs))
       return res;
 
+  ++statsCmpEquiv;
   equivs.insert(std::make_pair(ap, bp));
   return 0;
 }
@@ -1217,3 +1231,11 @@ CMPCREATE(UltExpr, Ult)
 CMPCREATE(UleExpr, Ule)
 CMPCREATE(SltExpr, Slt)
 CMPCREATE(SleExpr, Sle)
+
+void klee::dumpExprStats() {
+  llvm::errs() << "Expr stats (cmp: " << statsCmp << "):" <<
+      "\nBefHash: " << statsCmpBefHash <<
+      "\nBefContents: " << statsCmpBefContents <<
+      "\nBefKids: " << statsCmpBefKids <<
+      "\nEquiv: " << statsCmpEquiv << '\n';
+}
