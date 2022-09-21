@@ -138,8 +138,15 @@ int Expr::compare(const Expr &b, ExprEquivSet &equivs) const {
   ++statsCmpBefKids;
   unsigned aN = getNumKids();
   for (unsigned i=0; i<aN; i++)
-    if (int res = getKid(i)->compare(*b.getKid(i), equivs))
+    if (int res = getKid(i)->compare(*b.getKid(i), equivs)) {
+      llvm::errs() << "colliding hash value: " << hashValue << '\n';
+      llvm::errs() << "=== comparing: \n";
+      this->print(llvm::errs());
+      llvm::errs() << "\n=== and === \n";
+      b.print(llvm::errs());
+      llvm::errs() << "\n===\n";
       return res;
+    }
 
   ++statsCmpEquiv;
   equivs.insert(std::make_pair(ap, bp));
