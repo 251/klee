@@ -13,7 +13,6 @@ klee_add_component(kleeSupport
   MemoryUsage.cpp
   PrintVersion.cpp
   RNG.cpp
-  SpookyV2.cpp
   Time.cpp
   Timer.cpp
   TreeStream.cpp

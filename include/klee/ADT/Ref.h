@@ -33,6 +33,7 @@
 
 #include <cassert>
 #include <iosfwd> // FIXME: Remove this when LLVM 4.0 support is removed!!!
+#include <type_traits>
 
 namespace llvm {
   class raw_ostream;
@@ -42,6 +43,8 @@ namespace klee {
 
 template<class T>
 class ref;
+
+class Expr;
 
 /// Reference counter to be used as part of a ref-managed struct or class
 class ReferenceCounter {
@@ -81,7 +84,7 @@ public:
 
 template<class T>
 class ref {
-  T *ptr;
+  mutable T *ptr;
 
 public:
   // default constructor: create a NULL reference
@@ -217,7 +220,21 @@ public:
   // assumes non-null arguments
   int compare(const ref &rhs) const {
     assert(!isNull() && !rhs.isNull() && "Invalid call to compare()");
-    return get()->compare(*rhs.get());
+    const auto res = get()->compare(*rhs.get());
+    if constexpr (std::is_base_of_v<Expr, T>) {
+      if (res == 0 && ptr != rhs.ptr) {
+        if (ptr->_refCount.refCount > rhs.ptr->_refCount.refCount) {
+          inc();
+          rhs.dec();
+          rhs.ptr = ptr;
+        } else {
+          dec();
+          rhs.inc();
+          ptr = rhs.ptr;
+        }
+      }
+    }
+    return res;
   }
 
   // assumes non-null arguments
