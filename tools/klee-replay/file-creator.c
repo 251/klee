@@ -172,6 +172,7 @@ static int create_char_dev(const char *fname, exe_disk_file_t *dfile,
         struct termios mode;
 
         int res = tcgetattr(aslave, &mode);
+        (void)res;
         assert(!res);
         mode.c_iflag = IGNBRK;
 #if defined(__APPLE__) || defined(__FreeBSD__)
@@ -183,6 +184,7 @@ static int create_char_dev(const char *fname, exe_disk_file_t *dfile,
         mode.c_cc[VMIN] = 1;
         mode.c_cc[VTIME] = 0;
         res = tcsetattr(aslave, TCSANOW, &mode);
+        (void)res;
         assert(res == 0);
       }
 
@@ -301,7 +303,7 @@ static int create_reg_file(const char *fname, exe_disk_file_t *dfile,
   fprintf(stderr, "KLEE-REPLAY: NOTE: Creating file %s of length %d\n", fname, flen);
 
   // Open in RDWR just in case we have to end up using this fd.
-  if (__exe_env.version == 0 && mode == 0)
+  if (mode == 0)
     mode = 0644;
 
   int fd = open(fname, O_CREAT | O_RDWR, mode);

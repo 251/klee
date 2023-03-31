@@ -12,6 +12,7 @@
 #include "ExecutionState.h"
 
 #include "klee/Config/Version.h"
+#include "klee/Core/TerminationTypes.h"
 #include "klee/Module/InstructionInfoTable.h"
 #include "klee/Module/KInstruction.h"
 #include "klee/Module/KModule.h"
@@ -430,28 +431,41 @@ void StatsTracker::markBranchVisited(ExecutionState *visitedTrue,
 }
 
 void StatsTracker::writeStatsHeader() {
+  #undef BTYPE
+  #define BTYPE(Name,I) << "Branches" #Name " INTEGER,"
+  #undef TCLASS
+  #define TCLASS(Name,I) << "Termination" #Name " INTEGER,"
   std::ostringstream create, insert;
   create << "CREATE TABLE stats ("
-             << "Instructions INTEGER,"
-             << "FullBranches INTEGER,"
-             << "PartialBranches INTEGER,"
-             << "NumBranches INTEGER,"
-             << "UserTime REAL,"
-             << "NumStates INTEGER,"
-             << "MallocUsage INTEGER,"
-             << "NumQueries INTEGER,"
-             << "NumQueryConstructs INTEGER,"
-             << "WallTime REAL,"
-             << "CoveredInstructions INTEGER,"
-             << "UncoveredInstructions INTEGER,"
-             << "QueryTime INTEGER,"
-             << "SolverTime INTEGER,"
-             << "CexCacheTime INTEGER,"
-             << "ForkTime INTEGER,"
-             << "ResolveTime INTEGER,"
-             << "QueryCexCacheMisses INTEGER,"
-             << "QueryCexCacheHits INTEGER,"
-             << "ArrayHashTime INTEGER"
+         << "Instructions INTEGER,"
+         << "FullBranches INTEGER,"
+         << "PartialBranches INTEGER,"
+         << "NumBranches INTEGER,"
+         << "UserTime REAL,"
+         << "NumStates INTEGER,"
+         << "MallocUsage INTEGER,"
+         << "Queries INTEGER,"
+         << "SolverQueries INTEGER,"
+         << "NumQueryConstructs INTEGER,"
+         << "WallTime REAL,"
+         << "CoveredInstructions INTEGER,"
+         << "UncoveredInstructions INTEGER,"
+         << "QueryTime INTEGER,"
+         << "SolverTime INTEGER,"
+         << "CexCacheTime INTEGER,"
+         << "ForkTime INTEGER,"
+         << "ResolveTime INTEGER,"
+         << "QueryCacheMisses INTEGER,"
+         << "QueryCacheHits INTEGER,"
+         << "QueryCexCacheMisses INTEGER,"
+         << "QueryCexCacheHits INTEGER,"
+         << "InhibitedForks INTEGER,"
+         << "ExternalCalls INTEGER,"
+         << "Allocations INTEGER,"
+         << "States INTEGER,"
+         BRANCH_TYPES
+         TERMINATION_CLASSES
+         << "ArrayHashTime INTEGER"
          << ')';
   char *zErrMsg = nullptr;
   if(sqlite3_exec(statsFile, create.str().c_str(), nullptr, nullptr, &zErrMsg)) {
@@ -464,48 +478,75 @@ void StatsTracker::writeStatsHeader() {
    * happen, but if it does this statement will fail with SQLITE_CONSTRAINT error. If this happens you should either
    * remove the constraints or consider using `IGNORE` mode.
    */
+  #undef BTYPE
+  #define BTYPE(Name, I) << "Branches" #Name ","
+  #undef TCLASS
+  #define TCLASS(Name, I) << "Termination" #Name ","
   insert << "INSERT OR FAIL INTO stats ("
-             << "Instructions,"
-             << "FullBranches,"
-             << "PartialBranches,"
-             << "NumBranches,"
-             << "UserTime,"
-             << "NumStates,"
-             << "MallocUsage,"
-             << "NumQueries,"
-             << "NumQueryConstructs,"
-             << "WallTime,"
-             << "CoveredInstructions,"
-             << "UncoveredInstructions,"
-             << "QueryTime,"
-             << "SolverTime,"
-             << "CexCacheTime,"
-             << "ForkTime,"
-             << "ResolveTime,"
-             << "QueryCexCacheMisses,"
-             << "QueryCexCacheHits,"
-             << "ArrayHashTime"
-         << ") VALUES ("
-             << "?,"
-             << "?,"
-             << "?,"
-             << "?,"
-             << "?,"
-             << "?,"
-             << "?,"
-             << "?,"
-             << "?,"
-             << "?,"
-             << "?,"
-             << "?,"
-             << "?,"
-             << "?,"
-             << "?,"
-             << "?,"
-             << "?,"
-             << "?,"
-             << "?,"
-             << "? "
+         << "Instructions,"
+         << "FullBranches,"
+         << "PartialBranches,"
+         << "NumBranches,"
+         << "UserTime,"
+         << "NumStates,"
+         << "MallocUsage,"
+         << "Queries,"
+         << "SolverQueries,"
+         << "NumQueryConstructs,"
+         << "WallTime,"
+         << "CoveredInstructions,"
+         << "UncoveredInstructions,"
+         << "QueryTime,"
+         << "SolverTime,"
+         << "CexCacheTime,"
+         << "ForkTime,"
+         << "ResolveTime,"
+         << "QueryCacheMisses,"
+         << "QueryCacheHits,"
+         << "QueryCexCacheMisses,"
+         << "QueryCexCacheHits,"
+         << "InhibitedForks,"
+         << "ExternalCalls,"
+         << "Allocations,"
+         << "States,"
+         BRANCH_TYPES
+         TERMINATION_CLASSES
+         << "ArrayHashTime"
+         << ')';
+  #undef BTYPE
+  #define BTYPE(Name, I) << "?,"
+  #undef TCLASS
+  #define TCLASS(Name, I) << "?,"
+  insert << " VALUES ("
+         << "?,"
+         << "?,"
+         << "?,"
+         << "?,"
+         << "?,"
+         << "?,"
+         << "?,"
+         << "?,"
+         << "?,"
+         << "?,"
+         << "?,"
+         << "?,"
+         << "?,"
+         << "?,"
+         << "?,"
+         << "?,"
+         << "?,"
+         << "?,"
+         << "?,"
+         << "?,"
+         << "?,"
+         << "?,"
+         << "?,"
+         << "?,"
+         << "?,"
+         << "?,"
+         BRANCH_TYPES
+         TERMINATION_CLASSES
+         << "? "
          << ')';
 
   if(sqlite3_prepare_v2(statsFile, insert.str().c_str(), -1, &insertStmt, nullptr) != SQLITE_OK) {
@@ -518,29 +559,43 @@ time::Span StatsTracker::elapsed() {
 }
 
 void StatsTracker::writeStatsLine() {
-  sqlite3_bind_int64(insertStmt, 1, stats::instructions);
-  sqlite3_bind_int64(insertStmt, 2, fullBranches);
-  sqlite3_bind_int64(insertStmt, 3, partialBranches);
-  sqlite3_bind_int64(insertStmt, 4, numBranches);
-  sqlite3_bind_int64(insertStmt, 5, time::getUserTime().toMicroseconds());
-  sqlite3_bind_int64(insertStmt, 6, executor.states.size());
-  sqlite3_bind_int64(insertStmt, 7, util::GetTotalMallocUsage() + executor.memory->getUsedDeterministicSize());
-  sqlite3_bind_int64(insertStmt, 8, stats::queries);
-  sqlite3_bind_int64(insertStmt, 9, stats::queryConstructs);
-  sqlite3_bind_int64(insertStmt, 10, elapsed().toMicroseconds());
-  sqlite3_bind_int64(insertStmt, 11, stats::coveredInstructions);
-  sqlite3_bind_int64(insertStmt, 12, stats::uncoveredInstructions);
-  sqlite3_bind_int64(insertStmt, 13, stats::queryTime);
-  sqlite3_bind_int64(insertStmt, 14, stats::solverTime);
-  sqlite3_bind_int64(insertStmt, 15, stats::cexCacheTime);
-  sqlite3_bind_int64(insertStmt, 16, stats::forkTime);
-  sqlite3_bind_int64(insertStmt, 17, stats::resolveTime);
-  sqlite3_bind_int64(insertStmt, 18, stats::queryCexCacheMisses);
-  sqlite3_bind_int64(insertStmt, 19, stats::queryCexCacheHits);
+  #undef BTYPE
+  #define BTYPE(Name,I) sqlite3_bind_int64(insertStmt, arg++, stats::branches ## Name);
+  #undef TCLASS
+  #define TCLASS(Name,I) sqlite3_bind_int64(insertStmt, arg++, stats::termination ## Name);
+  int arg = 1;
+  sqlite3_bind_int64(insertStmt, arg++, stats::instructions);
+  sqlite3_bind_int64(insertStmt, arg++, fullBranches);
+  sqlite3_bind_int64(insertStmt, arg++, partialBranches);
+  sqlite3_bind_int64(insertStmt, arg++, numBranches);
+  sqlite3_bind_int64(insertStmt, arg++, time::getUserTime().toMicroseconds());
+  sqlite3_bind_int64(insertStmt, arg++, executor.states.size());
+  sqlite3_bind_int64(insertStmt, arg++, util::GetTotalMallocUsage() + executor.memory->getUsedDeterministicSize());
+  sqlite3_bind_int64(insertStmt, arg++, stats::queries);
+  sqlite3_bind_int64(insertStmt, arg++, stats::solverQueries);
+  sqlite3_bind_int64(insertStmt, arg++, stats::queryConstructs);
+  sqlite3_bind_int64(insertStmt, arg++, elapsed().toMicroseconds());
+  sqlite3_bind_int64(insertStmt, arg++, stats::coveredInstructions);
+  sqlite3_bind_int64(insertStmt, arg++, stats::uncoveredInstructions);
+  sqlite3_bind_int64(insertStmt, arg++, stats::queryTime);
+  sqlite3_bind_int64(insertStmt, arg++, stats::solverTime);
+  sqlite3_bind_int64(insertStmt, arg++, stats::cexCacheTime);
+  sqlite3_bind_int64(insertStmt, arg++, stats::forkTime);
+  sqlite3_bind_int64(insertStmt, arg++, stats::resolveTime);
+  sqlite3_bind_int64(insertStmt, arg++, stats::queryCacheMisses);
+  sqlite3_bind_int64(insertStmt, arg++, stats::queryCacheHits);
+  sqlite3_bind_int64(insertStmt, arg++, stats::queryCexCacheMisses);
+  sqlite3_bind_int64(insertStmt, arg++, stats::queryCexCacheHits);
+  sqlite3_bind_int64(insertStmt, arg++, stats::inhibitedForks);
+  sqlite3_bind_int64(insertStmt, arg++, stats::externalCalls);
+  sqlite3_bind_int64(insertStmt, arg++, stats::allocations);
+  sqlite3_bind_int64(insertStmt, arg++, ExecutionState::getLastID());
+  BRANCH_TYPES
+  TERMINATION_CLASSES
 #ifdef KLEE_ARRAY_DEBUG
-  sqlite3_bind_int64(insertStmt, 20, stats::arrayHashTime);
+  sqlite3_bind_int64(insertStmt, arg++, stats::arrayHashTime);
 #else
-  sqlite3_bind_int64(insertStmt, 20, -1LL);
+  sqlite3_bind_int64(insertStmt, arg++, -1LL);
 #endif
   int errCode = sqlite3_step(insertStmt);
   if(errCode != SQLITE_DONE) klee_error("Error writing stats data: %s", sqlite3_errmsg(statsFile));

@@ -257,10 +257,13 @@ void WeightedRandomSearcher::printName(llvm::raw_ostream &os) {
 #define IS_OUR_NODE_VALID(n)                                                   \
   (((n).getPointer() != nullptr) && (((n).getInt() & idBitMask) != 0))
 
-RandomPathSearcher::RandomPathSearcher(PTree &processTree, RNG &rng)
-  : processTree{processTree},
-    theRNG{rng},
-    idBitMask{processTree.getNextId()} {};
+RandomPathSearcher::RandomPathSearcher(InMemoryPTree *processTree, RNG &rng)
+    : processTree{*processTree}, theRNG{rng}, idBitMask{static_cast<uint8_t>(
+                                                  processTree
+                                                      ? processTree->getNextId()
+                                                      : 0)} {
+  assert(processTree);
+};
 
 ExecutionState &RandomPathSearcher::selectState() {
   unsigned flips=0, bits=0;
